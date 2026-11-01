@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Плеер">
+<meta name="theme-color" content="#121216">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>Плеер</title>
+<style>
+  :root {
+    --bg: #121216; --panel: #1b1b21; --row: #22222a; --line: #2e2e38;
+    --text: #f2f2f5; --muted: #9a9aa8; --faint: #6b6b78;
+    --accent: #2fc28a; --accent-2: #1f8f9e; --danger: #ff6b6b;
+    --radius: 14px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f4f7; --panel: #ffffff; --row: #f0f0f4; --line: #e2e2e8;
+      --text: #16161a; --muted: #6a6a78; --faint: #9a9aa6;
+      --accent: #12a06d; --accent-2: #137d8a; color-scheme: light;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input[type=file] { display: none; }
+  svg { display: block; }
+
+  .app { height: 100%; display: grid; grid-template-columns: 1fr; overflow: hidden; }
+  @media (min-width: 820px) { .app { grid-template-columns: minmax(320px, 400px) 1fr; } }
+
+  /* ---------- медиатека ---------- */
+  .library { overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
+    border-right: 1px solid var(--line); }
+  .lib-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 4px 14px; }
+  h1 { font-size: 30px; margin: 0; letter-spacing: -0.5px; }
+  .storage { font-size: 13px; color: var(--faint); }
+
+  .install { display: none; background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  .install b { color: var(--accent); }
+  .install.show { display: block; }
+
+  .add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px;
+    padding: 10px 12px; border-radius: 12px; background: var(--row); font-weight: 600; font-size: 15px;
+    text-align: center; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn:active { transform: scale(0.98); }
+  .hint { color: var(--faint); font-size: 13px; margin: 10px 4px 18px; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .item { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px;
+    padding: 10px 8px 10px 10px; border-radius: 12px; background: var(--panel); cursor: pointer; position: relative; }
+  .item.current { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .item .ico { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+  .item .ico.video { background: linear-gradient(135deg, #7b6cf6, #4b8bf5); }
+  .item .name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .item .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .item .sub .warn { color: #e9a23b; }
+  .item .bar { position: absolute; left: 66px; right: 52px; bottom: 6px; height: 3px; border-radius: 2px;
+    background: var(--line); overflow: hidden; }
+  .item .bar i { display: block; height: 100%; background: var(--accent); }
+  .item .del { width: 40px; height: 40px; display: grid; place-items: center; color: var(--faint); border-radius: 10px; }
+  .item .del:active { background: var(--row); }
+  .item.busy { opacity: 0.6; pointer-events: none; }
+
+  .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+  .empty svg { margin: 0 auto 12px; color: var(--faint); }
+
+  /* ---------- плеер ---------- */
+  .player { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
+    padding: calc(env(safe-area-inset-top) + 8px) 20px calc(env(safe-area-inset-bottom) + 20px); }
+  @media (max-width: 819px) {
+    .player { position: fixed; inset: 0; transform: translateY(100%); transition: transform .28s ease; z-index: 5; }
+    .app.show-player .player { transform: none; }
+  }
+  .player-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+  .back { display: flex; align-items: center; gap: 2px; color: var(--accent); font-size: 17px; padding: 8px 4px; }
+  @media (min-width: 820px) { .back { visibility: hidden; } }
+
+  .stage { flex: 1; min-height: 160px; display: grid; place-items: center; margin: 8px 0 16px; position: relative; }
+  video { width: 100%; max-height: 100%; border-radius: var(--radius); background: #000; display: none; }
+  .stage.is-video video { display: block; }
+  .cover { width: min(70vw, 300px, 100%); aspect-ratio: 1; border-radius: 28px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+    box-shadow: 0 20px 50px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .stage.is-video .cover { display: none; }
+  .placeholder { color: var(--faint); text-align: center; display: none; }
+  .player.idle .stage > * { display: none; }
+  .player.idle .placeholder { display: block; }
+  .player.idle .meta, .player.idle .scrub, .player.idle .controls, .player.idle .extras { visibility: hidden; }
+
+  .meta { text-align: center; margin-bottom: 14px; }
+  .title { font-size: 19px; font-weight: 700; overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+
+  .scrub input { width: 100%; -webkit-appearance: none; appearance: none; height: 28px; background: transparent; margin: 0; }
+  .scrub input::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, var(--accent) var(--p, 0%), var(--line) var(--p, 0%)); }
+  .scrub input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; margin-top: -7px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .times { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted);
+    font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+  .controls { display: flex; justify-content: center; align-items: center; gap: 28px; margin: 14px 0 10px; }
+  .skip { width: 60px; height: 60px; display: grid; place-items: center; border-radius: 50%; position: relative; }
+  .skip span { position: absolute; font-size: 11px; font-weight: 700; top: 22px; }
+  .skip:active { background: var(--row); }
+  .play { width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: #fff; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .play:active { transform: scale(0.96); }
+
+  .extras { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  .pill { min-height: 40px; padding: 8px 16px; border-radius: 20px; background: var(--row); font-weight: 600; font-size: 15px;
+    display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .video-only { display: none; }
+  .player.is-video .video-only { display: flex; }
+
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 20px);
+    background: #2b2b34; color: #fff; padding: 12px 16px; border-radius: 14px; font-size: 14px; display: flex; gap: 14px;
+    align-items: center; opacity: 0; pointer-events: none; transition: .25s; z-index: 10; max-width: calc(100% - 32px);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .toast button { color: var(--accent); font-weight: 700; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <section class="library">
+    <div class="lib-head">
+      <h1>Плеер</h1>
+      <div class="storage" id="storage"></div>
+    </div>
+
+    <div class="install" id="install">
+      Чтобы плеер работал как приложение и не терял файлы: нажми <b>Поделиться</b> → <b>На экран «Домой»</b>.
+    </div>
+
+    <div class="add-row">
+      <label class="btn primary">
+        <input type="file" id="addInput" multiple accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mp4,.m4v,.mov">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Добавить
+      </label>
+      <label class="btn">
+        <input type="file" id="openInput" accept="audio/*,video/*,.mp3,.m4a,.aac,.wav,.mp4,.m4v,.mov">
+        Открыть без копирования
+      </label>
+    </div>
+    <p class="hint">«Добавить» кладёт файл внутрь плеера — он всегда под рукой, даже без интернета.
+      Для огромных видео (больше пары ГБ) — «Открыть без копирования»: файл останется в «Файлах», а место, где ты остановилась, я запомню.</p>
+
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="empty">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      Пока пусто.<br>Добавь mp3 или видео из «Файлов».
+    </div>
+  </section>
+
+  <section class="player idle" id="player">
+    <div class="player-head">
+      <button class="back" id="back">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        Медиатека
+      </button>
+    </div>
+
+    <div class="stage" id="stage">
+      <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+      <div class="cover" id="cover">
+        <svg width="45%" height="45%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>
+      </div>
+      <div class="placeholder">Выбери, что послушать или посмотреть</div>
+    </div>
+    <audio id="audio" preload="metadata"></audio>
+
+    <div class="meta">
+      <div class="title" id="title"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+
+    <div class="scrub">
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Перемотка">
+      <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <button class="skip" id="back15" aria-label="Назад на 15 секунд">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></svg>
+        <span>15</span>
+      </button>
+      <button class="play" id="play" aria-label="Играть">
+        <svg id="playIcon" width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+      </button>
+      <button class="skip" id="fwd30" aria-label="Вперёд на 30 секунд">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
+        <span>30</span>
+      </button>
+    </div>
+
+    <div class="extras">
+      <button class="pill" id="speed">1×</button>
+      <button class="pill video-only" id="fs">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        Во весь экран
+      </button>
+      <button class="pill video-only" id="pip">Картинка в картинке</button>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"><span id="toastText"></span><button id="toastBtn"></button></div>
+
+<script>
+// ---------- хранилище: IndexedDB (meta — описание и место остановки, blobs — сами файлы) ----------
+const DB = { db: null };
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('player', 1);
+    r.onupgradeneeded = () => {
+      r.result.createObjectStore('meta', { keyPath: 'id' });
+      r.result.createObjectStore('blobs');
+    };
+    r.onsuccess = () => res(DB.db = r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+function idb(store, mode, fn) {
+  return new Promise((res, rej) => {
+    const t = DB.db.transaction(store, mode);
+    const req = fn(t.objectStore(store));
+    t.oncomplete = () => res(req && req.result);
+    t.onerror = t.onabort = () => rej(t.error);
+  });
+}
+const getAllMeta = () => idb('meta', 'readonly', s => s.getAll());
+const putMeta = m => idb('meta', 'readwrite', s => s.put(m));
+const getBlob = id => idb('blobs', 'readonly', s => s.get(id));
+const putBlob = (id, b) => idb('blobs', 'readwrite', s => s.put(b, id));
+const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), idb('blobs', 'readwrite', s => s.delete(id))]);
+
+// ---------- утилиты ----------
+const $ = id => document.getElementById(id);
+const fileId = f => f.name + '|' + f.size;
+const kindOf = f => {
+  const t = f.type || '';
+  if (t.startsWith('video')) return 'video';
+  if (t.startsWith('audio')) return 'audio';
+  return /\.(mp4|m4v|mov|webm|mkv)$/i.test(f.name) ? 'video' : 'audio';
+};
+const prettyName = n => n.replace(/\.[^.]+$/, '');
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+}
+function fmtSize(b) {
+  if (!b) return '';
+  const u = ['Б', 'КБ', 'МБ', 'ГБ']; let i = 0;
+  while (b >= 1024 && i < 3) { b /= 1024; i++; }
+  return (i ? b.toFixed(b < 10 ? 1 : 0) : b).toString().replace('.', ',') + ' ' + u[i];
+}
+let toastTimer;
+function toast(text, btnText, onBtn, ms = 4000) {
+  $('toastText').textContent = text;
+  $('toastBtn').textContent = btnText || '';
+  $('toastBtn').style.display = btnText ? '' : 'none';
+  $('toastBtn').onclick = () => { onBtn && onBtn(); $('toast').classList.remove('show'); };
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), ms);
+}
+const ICON_MUSIC = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+const ICON_VIDEO = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h11a2 2 0 0 1 2 2v1.5l4-2.5v10l-4-2.5V16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/></svg>';
+const ICON_TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+const ICON_PLAY = '<path d="M8 5.5v13l11-6.5z"/>';
+const ICON_PAUSE = '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>';
+
+// ---------- состояние ----------
+let items = [];          // описания файлов
+let current = null;      // что играет сейчас
+let el = null;           // активный элемент: audio или video
+let objectURL = null;
+let pendingReopen = null;
+let dragging = false;
+let lastSave = 0;
+const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+let speed = parseFloat(localStorage.getItem('speed')) || 1;
+
+// ---------- медиатека ----------
+async function refresh() {
+  items = await getAllMeta();
+  items.sort((a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added));
+  const list = $('list');
+  list.innerHTML = '';
+  $('empty').style.display = items.length ? 'none' : '';
+  for (const m of items) {
+    const li = document.createElement('li');
+    li.className = 'item' + (current && current.id === m.id ? ' current' : '') + (m.busy ? ' busy' : '');
+    const pct = m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0;
+    let sub;
+    if (m.busy) sub = 'Копирую в плеер…';
+    else {
+      const parts = [];
+      if (m.duration) parts.push(m.position > 1 && !m.done ? fmtTime(m.position) + ' из ' + fmtTime(m.duration) : fmtTime(m.duration));
+      if (m.done) parts.push('просмотрено');
+      parts.push(fmtSize(m.size));
+      sub = parts.join(' · ');
+      if (!m.stored) sub += ' · <span class="warn">в «Файлах»</span>';
+    }
+    li.innerHTML = `<div class="ico ${m.kind}">${m.kind === 'video' ? ICON_VIDEO : ICON_MUSIC}</div>
+      <div><div class="name"></div><div class="sub">${sub}</div></div>
+      <button class="del" aria-label="Удалить">${ICON_TRASH}</button>
+      ${pct > 0 && !m.done ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}`;
+    li.querySelector('.name').textContent = prettyName(m.name);
+    li.onclick = e => {
+      if (e.target.closest('.del')) return remove(m);
+      if (!m.stored) {
+        // файл лежит в «Файлах» — просим выбрать его снова (синхронно, чтобы iOS открыла выбор)
+        pendingReopen = m;
+        $('openInput').click();
+        return;
+      }
+      play(m);
+    };
+    list.appendChild(li);
+  }
+  updateStorage();
+}
+
+async function updateStorage() {
+  if (!navigator.storage || !navigator.storage.estimate) return;
+  const { usage, quota } = await navigator.storage.estimate();
+  $('storage').textContent = usage ? 'занято ' + fmtSize(usage) + (quota ? ' из ' + fmtSize(quota) : '') : '';
+}
+
+async function addFiles(files) {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  for (const f of files) {
+    const id = fileId(f);
+    if (items.some(m => m.id === id && m.stored)) { toast('«' + prettyName(f.name) + '» уже есть'); continue; }
+    const old = items.find(m => m.id === id);
+    const m = { id, name: f.name, size: f.size, mime: f.type, kind: kindOf(f), added: Date.now(),
+                position: old ? old.position : 0, duration: old ? old.duration : 0, stored: false, busy: true };
+    await putMeta(m); await refresh();
+    try {
+      await putBlob(id, f);
+      m.stored = true;
+    } catch (e) {
+      toast('Не хватило места для «' + prettyName(f.name) + '». Открой его без копирования.', null, null, 6000);
+    }
+    m.busy = false;
+    await putMeta(m); await refresh();
+  }
+}
+
+async function openOnce(f) {
+  const id = fileId(f);
+  if (pendingReopen && pendingReopen.id !== id) toast('Это другой файл — начну его с начала');
+  pendingReopen = null;
+  let m = items.find(x => x.id === id);
+  if (!m) {
+    m = { id, name: f.name, size: f.size, mime: f.type, kind: kindOf(f), added: Date.now(), position: 0, duration: 0, stored: false };
+    await putMeta(m);
+  }
+  play(m, f);
+}
+
+async function remove(m) {
+  const what = m.stored ? 'Удалить «' + prettyName(m.name) + '» из плеера?' : 'Убрать «' + prettyName(m.name) + '» из списка? Сам файл останется в «Файлах».';
+  if (!confirm(what)) return;
+  if (current && current.id === m.id) stop();
+  await delAll(m.id);
+  refresh();
+}
+
+// ---------- плеер ----------
+const audio = $('audio'), video = $('video');
+
+async function play(m, file) {
+  const blob = file || (m.stored ? await getBlob(m.id) : null);
+  if (!blob) { toast('Файл не найден — добавь его заново'); return; }
+  stop(false);
+  current = m;
+  el = m.kind === 'video' ? video : audio;
+  objectURL = URL.createObjectURL(blob);
+  el.src = objectURL;
+  el.playbackRate = el.defaultPlaybackRate = speed;
+
+  $('player').classList.remove('idle');
+  $('player').classList.toggle('is-video', m.kind === 'video');
+  $('stage').classList.toggle('is-video', m.kind === 'video');
+  $('title').textContent = prettyName(m.name);
+  $('sub').textContent = m.kind === 'video' ? 'Видео' : 'Аудио';
+  $('app').classList.add('show-player');
+
+  el.addEventListener('loadedmetadata', () => {
+    if (!m.duration || Math.abs(m.duration - el.duration) > 1) { m.duration = el.duration; putMeta(m); }
+    const pos = m.position || 0;
+    if (pos > 5 && pos < el.duration - 5 && !m.done) {
+      el.currentTime = pos;
+      toast('Продолжаю с ' + fmtTime(pos), 'С начала', () => { el.currentTime = 0; });
+    }
+    m.done = false;
+    updateUI();
+  }, { once: true });
+
+  m.lastPlayed = Date.now();
+  putMeta(m);
+  el.play().catch(() => {});
+  setupMediaSession(m);
+  refresh();
+}
+
+function stop(hide = true) {
+  savePosition(true);
+  for (const x of [audio, video]) { x.pause(); x.removeAttribute('src'); x.load(); }
+  if (objectURL) URL.revokeObjectURL(objectURL);
+  objectURL = null; el = null;
+  if (hide) { current = null; $('player').classList.add('idle'); $('app').classList.remove('show-player'); }
+}
+
+function savePosition(force) {
+  if (!current || !el || !isFinite(el.currentTime)) return;
+  const now = Date.now();
+  if (!force && now - lastSave < 5000) return;
+  lastSave = now;
+  current.position = el.currentTime;
+  putMeta(current);
+}
+
+function updateUI() {
+  if (!el) return;
+  const d = el.duration || 0, t = el.currentTime || 0;
+  if (!dragging) {
+    $('seek').value = d ? Math.round(t / d * 1000) : 0;
+    $('cur').textContent = fmtTime(t);
+    $('left').textContent = '−' + fmtTime(d - t);
+  }
+  $('seek').style.setProperty('--p', ($('seek').value / 10) + '%');
+  $('playIcon').innerHTML = el.paused ? ICON_PLAY : ICON_PAUSE;
+  if ('mediaSession' in navigator && d && navigator.mediaSession.setPositionState) {
+    try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(t, d), playbackRate: el.playbackRate }); } catch (e) {}
+  }
+}
+
+for (const x of [audio, video]) {
+  x.addEventListener('timeupdate', () => { if (x === el) { updateUI(); savePosition(); } });
+  x.addEventListener('play', () => x === el && updateUI());
+  x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
+  x.addEventListener('ended', () => {
+    if (x !== el || !current) return;
+    current.position = 0; current.done = true; putMeta(current); refresh(); updateUI();
+  });
+  x.addEventListener('error', () => {
+    if (x !== el) return;
+    toast('Этот формат iPhone не открывает. Видео лучше скачивать в mp4.', null, null, 6000);
+  });
+}
+
+function skip(sec) {
+  if (!el) return;
+  el.currentTime = Math.max(0, Math.min((el.duration || 0) - 0.5, el.currentTime + sec));
+  updateUI();
+}
+
+function togglePlay() {
+  if (!el) return;
+  el.paused ? el.play() : el.pause();
+}
+
+function setupMediaSession(m) {
+  if (!('mediaSession' in navigator)) return;
+  const ms = navigator.mediaSession;
+  ms.metadata = new MediaMetadata({
+    title: prettyName(m.name), artist: 'Плеер',
+    artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
+  });
+  const h = {
+    play: () => el && el.play(),
+    pause: () => el && el.pause(),
+    seekbackward: d => skip(-(d.seekOffset || 15)),
+    seekforward: d => skip(d.seekOffset || 30),
+    seekto: d => { if (el) { el.currentTime = d.seekTime; updateUI(); } },
+  };
+  for (const [k, fn] of Object.entries(h)) { try { ms.setActionHandler(k, fn); } catch (e) {} }
+}
+
+// ---------- кнопки ----------
+$('addInput').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
+$('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[0]); else pendingReopen = null; e.target.value = ''; };
+$('play').onclick = togglePlay;
+$('back15').onclick = () => skip(-15);
+$('fwd30').onclick = () => skip(30);
+$('back').onclick = () => $('app').classList.remove('show-player');
+video.onclick = togglePlay;
+
+$('seek').addEventListener('input', () => {
+  dragging = true;
+  if (!el) return;
+  const t = $('seek').value / 1000 * (el.duration || 0);
+  $('cur').textContent = fmtTime(t);
+  $('left').textContent = '−' + fmtTime((el.duration || 0) - t);
+  $('seek').style.setProperty('--p', ($('seek').value / 10) + '%');
+});
+$('seek').addEventListener('change', () => {
+  dragging = false;
+  if (el) { el.currentTime = $('seek').value / 1000 * (el.duration || 0); savePosition(true); }
+});
+
+function showSpeed() { $('speed').textContent = (speed + '').replace('.', ',') + '×'; }
+$('speed').onclick = () => {
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  localStorage.setItem('speed', speed);
+  if (el) el.playbackRate = el.defaultPlaybackRate = speed;
+  showSpeed();
+};
+$('fs').onclick = () => {
+  if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+  else if (video.requestFullscreen) video.requestFullscreen();
+};
+$('pip').onclick = () => {
+  if (document.pictureInPictureElement) document.exitPictureInPicture();
+  else if (video.requestPictureInPicture) video.requestPictureInPicture().catch(() => toast('Здесь «картинка в картинке» недоступна'));
+  else if (video.webkitSetPresentationMode) video.webkitSetPresentationMode('picture-in-picture');
+};
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  if (e.code === 'ArrowLeft') skip(-15);
+  if (e.code === 'ArrowRight') skip(30);
+});
+document.addEventListener('visibilitychange', () => document.hidden && savePosition(true));
+window.addEventListener('pagehide', () => savePosition(true));
+
+// подсказка «установи на экран Домой» — только на iPhone/iPad в обычном Safari
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+if (isIOS && !standalone) $('install').classList.add('show');
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+showSpeed();
+// если плеер закрыли посреди копирования — снимаем «Копирую…»
+openDB().then(async () => {
+  for (const m of await getAllMeta()) if (m.busy) { m.busy = false; await putMeta(m); }
+  await refresh();
+}).catch(() => toast('Не удалось открыть хранилище браузера', null, null, 8000));
+
+// для проверки: window.player.addFiles([...File])
+window.player = { addFiles, openOnce };
+</script>
+</body>
+</html>
