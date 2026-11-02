@@ -133,7 +133,7 @@
   .stage { position: relative; margin: 22px 20px 0; flex: none; }
   .art-wrap { position: relative; width: min(100%, 300px); aspect-ratio: 1; margin-right: auto; }
   @media (min-width: 820px) {
-    .art-wrap { width: min(100%, 44vh, 380px); margin: 0 auto; }
+    .art-wrap { width: min(100%, 46vh, 520px); margin: 0 auto; }
     .np-title, .np-sub { text-align: center; justify-content: center; }
     .np-sub { gap: 18px; }
   }
@@ -187,6 +187,19 @@
   .big { width: 78px; height: 78px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center;
     box-shadow: 0 10px 24px color-mix(in srgb, var(--red) 35%, transparent); }
   .big:active, .mini .pp:active { transform: scale(.96); }
+  @media (min-width: 820px) {
+    /* iPad: обложка, название и волна — крупнее и по центру между верхом и кнопками */
+    .np-inner { max-width: 640px; }
+    .np-body { display: contents; }
+    .stage { margin-top: auto; }
+    .player.idle .stage { margin: auto 20px; }
+    .player.is-video .vid-panel { margin-bottom: auto; }
+    .np-title { font-size: clamp(44px, 6vh, 68px); }
+    .np-sub { font-size: 12px; }
+    .rate button { width: 32px; height: 34px; }
+    .wave { height: 60px; margin-top: 24px; }
+    .times { font-size: 12px; }
+  }
 
   /* ---------- меню ---------- */
   .menu-bg { position: fixed; inset: 0; z-index: 15; display: none; }
