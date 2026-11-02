@@ -92,6 +92,24 @@
   .item.current .name { color: var(--red); }
   .item .bar { position: absolute; left: 80px; right: 44px; bottom: -1px; height: 2px; background: var(--line); }
   .item .bar i { display: block; height: 100%; background: var(--red); }
+
+  /* ---------- фото: квадратики во всю ширину, как профиль в инстаграме ---------- */
+  .photos { display: none; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 14px 0 0; }
+  .lib-photos .photos { display: grid; }
+  .lib-photos .tools, .lib-photos .list { display: none; }
+  .photos > * { aspect-ratio: 1; overflow: hidden; background: var(--field); position: relative; }
+  .photos img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photos .add { display: grid; place-items: center; color: var(--muted); cursor: pointer; }
+  .photos .add input { position: absolute; inset: 0; opacity: 0; }
+  .photo-view { position: fixed; inset: 0; z-index: 30; background: #000; display: none; touch-action: none; }
+  .photo-view.show { display: block; }
+  .photo-view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: transform .2s, opacity .2s; }
+  .photo-view button { position: absolute; top: calc(env(safe-area-inset-top) + 10px); width: 44px; height: 44px; display: grid; place-items: center;
+    color: #fff; background: rgba(0,0,0,.35); border-radius: 22px; z-index: 1; }
+  .photo-view .pv-close { left: 12px; }
+  .photo-view .pv-del { right: 12px; }
+  .photo-view .pv-n { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 14px); text-align: center;
+    color: rgba(255,255,255,.7); font: 500 10.5px var(--mono); }
   .more { width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); }
   .item.busy { opacity: .55; pointer-events: none; }
   .empty { padding: 36px 20px; font: 500 11px/1.7 var(--mono); text-transform: uppercase; color: var(--muted); }
@@ -100,8 +118,9 @@
   .mini { position: fixed; left: 10px; right: 10px; bottom: calc(env(safe-area-inset-bottom) + 10px); z-index: 4;
     background: var(--mini); color: var(--mini-ink); border-radius: 18px; padding: 9px 10px 9px 9px; overflow: hidden;
     display: none; grid-template-columns: 44px 1fr auto auto auto; gap: 10px; align-items: center; cursor: pointer;
-    box-shadow: 0 12px 30px rgba(0,0,0,.25); }
+    box-shadow: 0 12px 30px rgba(0,0,0,.25); touch-action: pan-y; }
   .mini.show { display: grid; }
+  .mini.gone { transition: transform .22s ease-in, opacity .22s; opacity: 0; }
   .app.show-player .mini { display: none; }
   @media (min-width: 820px) { .mini.show { display: none; } }
   .mini::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: var(--p, 0%); background: var(--red); }
@@ -319,6 +338,7 @@
     </div>
     <div class="install" id="install">To keep your files and work offline, add the player to your Home Screen: <b>Share → Add to Home Screen</b>.</div>
     <ul class="list" id="list"></ul>
+    <div class="photos" id="photos"></div>
     <div class="empty" id="empty"></div>
   </section>
 
@@ -527,22 +547,33 @@
   </div>
 </div>
 
+<!-- фото на весь экран: смахни влево/вправо — соседнее, вниз — закрыть -->
+<div class="photo-view" id="photoView">
+  <img id="pvImg" alt="">
+  <button class="pv-close" id="pvClose" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  <button class="pv-del" id="pvDel" aria-label="Delete photo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+  <div class="pv-n" id="pvN"></div>
+</div>
+
 <div class="toast" id="toast"><span id="toastText"></span><button id="toastBtn"></button></div>
 
 <script>
 // ---------- хранилище: IndexedDB ----------
 // meta  — описание файла, место остановки, рейтинг, вкладка, текст
 // blobs — сами файлы (ключ = id) и картинки (ключ = 'cover:' + id)
-// Схема та же, что в первой версии (база 'player', версия 1) — новые поля просто добавляются к записям.
+// База 'player': meta и blobs — с первой версии (новые поля просто добавляются к записям), photos — с версии 2.
 const DB = { db: null };
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('player', 1);
+    const r = indexedDB.open('player', 2);
     r.onupgradeneeded = () => {
-      r.result.createObjectStore('meta', { keyPath: 'id' });
-      r.result.createObjectStore('blobs');
+      const db = r.result;
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs');
+      // версия 2: фото — отдельно от музыки и видео, в синхронизацию с Mac не идут
+      if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'id' });
     };
-    r.onsuccess = () => res(DB.db = r.result);
+    r.onsuccess = () => { DB.db = r.result; DB.db.onversionchange = () => DB.db.close(); res(DB.db); };
     r.onerror = () => rej(r.error);
   });
 }
@@ -578,6 +609,7 @@ const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), d
 const CATS = [
   { id: 'music', name: 'Music', unit: ['track', 'tracks'], icon: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>' },
   { id: 'anime', name: 'Anime', unit: ['video', 'videos'], icon: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8l-6 4 6 4z"/>' },
+  { id: 'photos', name: 'Photos', unit: ['photo', 'photos'], icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>' },
   { id: 'audiobooks', name: 'Audiobooks', unit: ['file', 'files'], icon: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v15H6.5A2.5 2.5 0 0 0 4 20.5 2.5 2.5 0 0 0 6.5 23H20"/>' },
 ];
 // вкладки на Mac — названия папок в ~/Медиатека
@@ -587,6 +619,8 @@ const normTab = t => (t === 'video' || t === 'movies') ? 'anime' : t;
 const catSvg = (c, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg>`;
 const catOf = m => normTab(m.category) || (m.kind === 'video' ? 'anime' : 'music');   // старые записи — по типу файла
 const catById = id => CATS.find(c => c.id === id) || CATS[0];
+// вкладки для музыки и видео (у фото своя полка, синхронизации и настроек дорожки у них нет)
+const MEDIA_CATS = CATS.filter(c => c.id !== 'photos');
 
 // ---------- устройства ----------
 // какое это устройство — от него зависит, какие файлы здесь держать (метка «Keep on» у файла)
@@ -677,6 +711,8 @@ let tab = normTab(localStorage.getItem('tab')) || 'music';
 let sort = { rating: 'rating-desc', name: 'az' }[localStorage.getItem('sort')] || localStorage.getItem('sort') || 'rating-desc';
 let shuffle = new Map();   // для «Shuffle»: порядок держится, пока не выберешь его снова
 let query = '';
+const MEDIA_ACCEPT = 'audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov';
+let photos = [];         // вкладка «Photos»: новые сверху, в одной пачке — в том порядке, в каком выбрали
 
 // ---------- картинки ----------
 async function loadCovers() {
@@ -721,13 +757,15 @@ function renderTabs() {
   const counts = {};
   for (const m of items) counts[catOf(m)] = (counts[catOf(m)] || 0) + 1;
   const c = catById(tab);
-  $('tabs').innerHTML = CATS.map((x, i) =>
-    `<button class="tab${x.id === tab ? ' active' : ''}" data-tab="${x.id}">${pad2(i + 1)} ${x.name}</button>`).join('');
+  $('tabs').innerHTML = CATS.map(x =>
+    `<button class="tab${x.id === tab ? ' active' : ''}" data-tab="${x.id}">${x.name}</button>`).join('');
   $('giant').textContent = c.name;
   fitGiant();
-  $('meta').textContent = plural(counts[tab] || 0, c.unit);
+  $('meta').textContent = plural(tab === 'photos' ? photos.length : counts[tab] || 0, c.unit);
   $('search').placeholder = 'Search ' + c.name.toLowerCase();
   $('addSub').textContent = 'to ' + c.name;
+  $('addInput').accept = tab === 'photos' ? 'image/*' : MEDIA_ACCEPT;
+  $('library').classList.toggle('lib-photos', tab === 'photos');
 }
 
 function visibleItems() {
@@ -749,7 +787,9 @@ function visibleItems() {
 async function refresh() {
   items = await getAllMeta();
   await loadCovers();
+  if (tab === 'photos') await loadPhotos();
   renderTabs();
+  if (tab === 'photos') return renderPhotos();
   updateStorageSub(sumSize(items.filter(m => m.stored)));
   const list = $('list');
   list.innerHTML = '';
@@ -916,7 +956,7 @@ function renderItemSheet() {
   rateButtons($('isRate'), m);
   paintThumb($('isThumb'), m, 26);
   $('isCoverDel').style.display = m.hasCover ? '' : 'none';
-  $('isCats').innerHTML = CATS.map(c => `<button data-cat="${c.id}" class="${catOf(m) === c.id ? 'on' : ''}">${c.name}</button>`).join('');
+  $('isCats').innerHTML = MEDIA_CATS.map(c => `<button data-cat="${c.id}" class="${catOf(m) === c.id ? 'on' : ''}">${c.name}</button>`).join('');
   $('isText').textContent = m.text ? 'Open text' : 'Add text';
   const mac = isMac(m);
   $('isWhere').style.display = mac ? '' : 'none';
@@ -1102,6 +1142,7 @@ async function play(m, file) {
   refresh();
 }
 
+let updateReady = null;   // новая версия плеера ждёт, пока закроют трек
 function stop(hide = true) {
   savePosition(true);
   for (const x of [audio, video]) { x.pause(); x.removeAttribute('src'); x.load(); }
@@ -1111,6 +1152,8 @@ function stop(hide = true) {
     current = null;
     $('player').classList.add('idle'); $('player').classList.remove('playing');
     $('app').classList.remove('show-player'); $('mini').classList.remove('show');
+    if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
+    if (updateReady) setTimeout(updateReady, 300);
   }
 }
 
@@ -1189,18 +1232,57 @@ function togglePlay() {
   el.paused ? el.play() : el.pause();
 }
 
+// картинка для экрана блокировки: своя обложка или нарисованная (цвет трека, иконка вкладки, название), 1024 px
+const artCache = new Map();
+const lockArt = m => {
+  const src = covers.get(m.id) || artCache.get(m.id);
+  return src ? [{ src, sizes: covers.get(m.id) ? '800x800' : '1024x1024', type: covers.get(m.id) ? 'image/jpeg' : 'image/png' }]
+             : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }];
+};
+async function bigArt(m) {
+  if (artCache.has(m.id)) return;
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const [a, b] = GRADS[hash(m.id) % GRADS.length];
+  const gr = g.createLinearGradient(0, 0, S, S); gr.addColorStop(0, a); gr.addColorStop(1, b);
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  const icon = new Image();
+  icon.src = 'data:image/svg+xml,' + encodeURIComponent(catSvg(catById(catOf(m)), 24)
+    .replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ').replace('currentColor', 'rgba(255,255,255,0.55)'));
+  await icon.decode().catch(() => {});
+  if (icon.complete && icon.naturalWidth) g.drawImage(icon, 96, 96, 140, 140);
+  // название — крупно внизу, как в самом плеере
+  g.fillStyle = '#fff'; g.textBaseline = 'alphabetic';
+  const words = titleOf(m).toUpperCase().split(/\s+/), lines = [];
+  let size = 120;
+  for (; size >= 56; size -= 8) {
+    g.font = `800 ${size}px "Inter Tight", system-ui, sans-serif`;
+    lines.length = 0; let line = '';
+    for (const w of words) {
+      const t = line ? line + ' ' + w : w;
+      if (g.measureText(t).width > S - 192 && line) { lines.push(line); line = w; } else line = t;
+    }
+    lines.push(line);
+    if (lines.length <= 4 && lines.every(l => g.measureText(l).width <= S - 192)) break;
+  }
+  lines.splice(4);
+  lines.forEach((l, i) => g.fillText(l, 96, S - 96 - (lines.length - 1 - i) * size * 0.92));
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  if (blob) artCache.set(m.id, URL.createObjectURL(blob));
+}
+
 function setupMediaSession(m) {
   if (!('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
-  const art = covers.get(m.id);
-  ms.metadata = new MediaMetadata({
-    title: titleOf(m), artist: catById(catOf(m)).name,
-    artwork: art ? [{ src: art, sizes: '800x800', type: 'image/jpeg' }]
-                 : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
-  });
+  const meta = () => new MediaMetadata({ title: titleOf(m), artist: catById(catOf(m)).name, artwork: lockArt(m) });
+  ms.metadata = meta();
+  // если обложки нет — рисуем свою большую картинку (на экране блокировки она раскрывается на весь экран)
+  if (!covers.get(m.id)) bigArt(m).then(() => { if (current === m) ms.metadata = meta(); });
+  // «играть» и «пауза» не перехватываем: iOS сама включает и ставит на паузу звук. Если делать это из страницы,
+  // iOS после паузы на заблокированном экране не даёт включить снова (страница в это время «спит»)
   const h = {
-    play: () => el && el.play(),
-    pause: () => el && el.pause(),
+    play: null,
+    pause: null,
     seekbackward: d => skip(-(d.seekOffset || 10)),
     seekforward: d => skip(d.seekOffset || 10),
     previoustrack: prevAction,
@@ -1233,7 +1315,7 @@ $('sort').onchange = () => {
 
 // выбор файлов: меню закрываем чуть позже, чтобы iOS успела открыть окно выбора
 for (const id of ['addInput', 'openInput']) $(id).addEventListener('click', () => setTimeout(closeMenu, 400));
-$('addInput').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
+$('addInput').onchange = e => { const f = [...e.target.files]; e.target.value = ''; tab === 'photos' ? addPhotos(f) : addFiles(f); };
 $('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[0]); else pendingReopen = null; e.target.value = ''; };
 
 $('play').onclick = togglePlay;
@@ -1279,7 +1361,39 @@ function applyLibHidden(hidden) {
 }
 $('libToggle').onclick = () => applyLibHidden(!$('app').classList.contains('lib-hidden'));
 applyLibHidden(!!localStorage.getItem('libHidden'));
+// мини-плеер можно смахнуть вбок или вниз — трек останавливается и плашка исчезает
+let miniSwipe = null, miniSwiped = 0;
+$('mini').addEventListener('touchstart', e => {
+  const t = e.touches[0]; miniSwipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, on: false };
+}, { passive: true });
+$('mini').addEventListener('touchmove', e => {
+  if (!miniSwipe) return;
+  const t = e.touches[0], s = miniSwipe;
+  s.dx = t.clientX - s.x; s.dy = Math.max(0, t.clientY - s.y);
+  if (!s.on && (Math.abs(s.dx) > 12 || s.dy > 12)) s.on = true;
+  if (!s.on) return;
+  e.preventDefault();
+  const k = Math.abs(s.dx) > s.dy ? Math.abs(s.dx) / 200 : s.dy / 80;
+  $('mini').style.transform = Math.abs(s.dx) > s.dy ? `translateX(${s.dx}px)` : `translateY(${s.dy}px)`;
+  $('mini').style.opacity = Math.max(0.2, 1 - k);
+}, { passive: false });
+$('mini').addEventListener('touchend', () => {
+  const s = miniSwipe; miniSwipe = null;
+  if (!s || !s.on) return;
+  miniSwiped = Date.now();
+  const mini = $('mini');
+  if (Math.abs(s.dx) > 90 || s.dy > 45) {
+    mini.classList.add('gone');
+    mini.style.transform = Math.abs(s.dx) > s.dy ? `translateX(${Math.sign(s.dx) * innerWidth}px)` : 'translateY(140px)';
+    setTimeout(() => { stop(); mini.classList.remove('gone'); mini.style.transform = mini.style.opacity = ''; }, 230);
+  } else {
+    mini.style.transition = 'transform .2s, opacity .2s';
+    mini.style.transform = mini.style.opacity = '';
+    setTimeout(() => { mini.style.transition = ''; }, 220);
+  }
+});
 $('mini').onclick = e => {
+  if (Date.now() - miniSwiped < 400) return;   // это было смахивание, а не нажатие
   if (e.target.closest('#miniPlay')) return current && current.kind === 'video' ? $('app').classList.add('show-player') : togglePlay();
   if (e.target.closest('#miniPrev')) return prevAction();
   if (e.target.closest('#miniNext')) return nextAction();
@@ -1342,11 +1456,13 @@ if (isIOS && !standalone) $('install').classList.add('show');
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
+  // пока трек открыт (даже на паузе — например, на заблокированном экране), не перезагружаем: иначе «играть»
+  // на экране блокировки уже нечего включать. Обновимся, когда трек закроют
+  const reloadNow = () => { if (reloading || current) return; reloading = true; location.reload(); };
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloading || (current && el && !el.paused)) return;   // не прерываем то, что играет
-    reloading = true;
-    savePosition(true);
-    location.reload();
+    if (!hadController) return;
+    updateReady = reloadNow;
+    reloadNow();
   });
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
@@ -1554,7 +1670,7 @@ $('dupBtn').onclick = () => { closeMenu(); checkDuplicates(false); };
 // ---------- синхронизация с Mac ----------
 // На Mac работает «Медиатека» (через Tailscale): облегчённые копии файлов и общие рейтинги/тексты/позиции.
 // Синхронизация вручную, когда удобно (например, раз в неделю): всё остальное время плеер работает сам.
-const readSyncTabs = () => [...new Set((JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id)).map(normTab))];
+const readSyncTabs = () => [...new Set((JSON.parse(localStorage.getItem('syncTabs') || 'null') || MEDIA_CATS.map(c => c.id)).map(normTab))];
 let syncTabs = readSyncTabs();
 let syncing = false;
 const syncAddr = () => (localStorage.getItem('syncAddr') || '').trim().replace(/\/+$/, '');
@@ -1569,7 +1685,7 @@ function updateSyncLabel() {
 }
 function renderSyncSheet() {
   $('syncAddr').value = localStorage.getItem('syncAddr') || '';
-  $('syncTabs').innerHTML = CATS.map(c =>
+  $('syncTabs').innerHTML = MEDIA_CATS.map(c =>
     `<label><input type="checkbox" data-tab="${c.id}" ${syncTabs.includes(c.id) ? 'checked' : ''}>${c.name}</label>`).join('');
   const last = +localStorage.getItem('lastSync');
   if (!syncing) $('syncStatus').textContent = last
@@ -1860,7 +1976,8 @@ async function renderStorage() {
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
   const stored = items.filter(m => m.stored);
   const used = est.usage || sumSize(stored);
-  const byTab = CATS.map(c => { const l = stored.filter(m => catOf(m) === c.id); return `${c.name} ${l.length}` + (l.length ? ' · ' + fmtSize(sumSize(l)) : ''); });
+  const byTab = MEDIA_CATS.map(c => { const l = stored.filter(m => catOf(m) === c.id); return `${c.name} ${l.length}` + (l.length ? ' · ' + fmtSize(sumSize(l)) : ''); });
+  if (photos.length) byTab.splice(2, 0, `Photos ${photos.length} · ${fmtSize(sumSize(photos))}`);
   const cloud = items.filter(m => inCloud(m) && keptHere(m.where));
   const mac = JSON.parse(localStorage.getItem('macStorage') || 'null');
   $('stUsage').innerHTML = `<div class="label">Player on this ${devName()}</div>
@@ -1917,8 +2034,125 @@ $('storageSheet').onclick = async e => {
   if (e.target.closest('#stDups')) { closeSheets(); openDupSheet(); }
 };
 
-// для проверки: window.player.addFiles([...File])
-window.player = { addFiles, openOnce, sync };
+// ---------- фото ----------
+// Личная лента: фото из галереи квадратиками, без подписей. Храним уменьшенную копию (до 2048 px — на весь экран
+// iPad хватает) и квадратик 400 px для сетки — так 100 фото занимают ~50 МБ, а не гигабайт оригиналов.
+const photoThumbs = new Map();   // id → адрес квадратика
+const photoOrder = (a, b) => b.added - a.added || a.idx - b.idx;
+async function loadPhotos() {
+  photos = (await idb('photos', 'readonly', s => s.getAll())).sort(photoOrder);
+  for (const p of photos) if (!photoThumbs.has(p.id)) photoThumbs.set(p.id, URL.createObjectURL(p.thumb));
+}
+const ADD_TILE = `<label class="add" aria-label="Add photos"><input type="file" accept="image/*" multiple id="photoInput">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></label>`;
+function renderPhotos() {
+  $('list').innerHTML = '';
+  $('empty').style.display = photos.length ? 'none' : '';
+  $('empty').innerHTML = 'No photos yet.<br>Tap + to choose from your gallery.';
+  $('photos').innerHTML = ADD_TILE + photos.map((p, i) => `<div data-i="${i}"><img src="${photoThumbs.get(p.id)}" alt="" loading="lazy"></div>`).join('');
+  $('photoInput').onchange = e => { const f = [...e.target.files]; e.target.value = ''; addPhotos(f); };
+}
+async function decodeImage(f) {
+  try { return await createImageBitmap(f); } catch (e) {}
+  const url = URL.createObjectURL(f), img = new Image();   // запасной путь — через обычную картинку
+  try { img.src = url; await img.decode(); return img; } finally { URL.revokeObjectURL(url); }
+}
+// max — длинная сторона; square — вырезать середину квадратом
+function toJpeg(src, max, square, q) {
+  const w = src.width, h = src.height;
+  const side = square ? Math.min(w, h) : 0;
+  const k = Math.min(1, max / (square ? side : Math.max(w, h)));
+  const c = document.createElement('canvas');
+  c.width = Math.round((square ? side : w) * k); c.height = Math.round((square ? side : h) * k);
+  const g = c.getContext('2d');
+  if (square) g.drawImage(src, (w - side) / 2, (h - side) / 2, side, side, 0, 0, c.width, c.height);
+  else g.drawImage(src, 0, 0, c.width, c.height);
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', q));
+}
+async function addPhotos(files) {
+  files = files.filter(f => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|webp|gif)$/i.test(f.name));
+  if (!files.length) return;
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  await loadPhotos();
+  const known = new Set(photos.map(p => p.src));
+  const added = Date.now();
+  let ok = 0, same = 0, bad = 0;
+  for (const [i, f] of files.entries()) {
+    $('meta').textContent = `Adding ${i + 1} of ${files.length}…`;
+    const src = f.name + '|' + f.size;   // то же фото, выбранное второй раз, — не дублируем
+    if (known.has(src)) { same++; continue; }
+    try {
+      const img = await decodeImage(f);
+      const full = await toJpeg(img, 2048, false, 0.85), thumb = await toJpeg(img, 400, true, 0.8);
+      if (img.close) img.close();
+      await idb('photos', 'readwrite', s => s.put({ id: 'ph:' + added + ':' + i, added, idx: i, src, full, thumb, size: full.size + thumb.size }));
+      known.add(src); ok++;
+    } catch (e) {
+      bad++;
+      if (e && e.name === 'QuotaExceededError') { toast('Not enough space for more photos', null, null, 6000); break; }
+    }
+  }
+  await refresh();
+  toast([ok && plural(ok, ['photo added', 'photos added']), same && plural(same, ['already here', 'already here']),
+         bad && plural(bad, ['couldn’t be read', 'couldn’t be read'])].filter(Boolean).join(' · ') || 'Nothing added');
+}
+
+// просмотр на весь экран
+let pvIndex = -1, pvURL = null, pvTouch = null;
+async function showPhoto(i) {
+  if (i < 0 || i >= photos.length) return;
+  pvIndex = i;
+  const p = photos[i];
+  const url = URL.createObjectURL(p.full);
+  $('pvImg').src = url;
+  if (pvURL) URL.revokeObjectURL(pvURL);
+  pvURL = url;
+  $('pvN').textContent = (i + 1) + ' / ' + photos.length;
+  $('photoView').classList.add('show');
+}
+function closePhoto() {
+  $('photoView').classList.remove('show');
+  $('pvImg').removeAttribute('src'); $('pvImg').style.transform = $('pvImg').style.opacity = '';
+  if (pvURL) URL.revokeObjectURL(pvURL);
+  pvURL = null; pvIndex = -1;
+}
+$('photos').onclick = e => { const t = e.target.closest('[data-i]'); if (t) showPhoto(+t.dataset.i); };
+$('pvClose').onclick = closePhoto;
+$('pvDel').onclick = async () => {
+  const p = photos[pvIndex]; if (!p || !confirm('Delete this photo from the player?')) return;
+  await idb('photos', 'readwrite', s => s.delete(p.id));
+  URL.revokeObjectURL(photoThumbs.get(p.id)); photoThumbs.delete(p.id);
+  const i = pvIndex;
+  await refresh();
+  if (!photos.length) closePhoto(); else showPhoto(Math.min(i, photos.length - 1));
+};
+$('photoView').addEventListener('touchstart', e => { const t = e.touches[0]; pvTouch = { x: t.clientX, y: t.clientY, dx: 0, dy: 0 }; }, { passive: true });
+$('photoView').addEventListener('touchmove', e => {
+  if (!pvTouch || e.target.closest('button')) return;
+  const t = e.touches[0]; pvTouch.dx = t.clientX - pvTouch.x; pvTouch.dy = t.clientY - pvTouch.y;
+  const img = $('pvImg'); img.style.transition = 'none';
+  if (Math.abs(pvTouch.dx) > Math.abs(pvTouch.dy)) img.style.transform = `translateX(${pvTouch.dx}px)`;
+  else if (pvTouch.dy > 0) { img.style.transform = `translateY(${pvTouch.dy}px) scale(${1 - pvTouch.dy / 1500})`; img.style.opacity = 1 - pvTouch.dy / 600; }
+}, { passive: true });
+$('photoView').addEventListener('touchend', () => {
+  const s = pvTouch; pvTouch = null;
+  const img = $('pvImg'); img.style.transition = '';
+  if (!s) return;
+  if (s.dy > 110 && s.dy > Math.abs(s.dx)) return closePhoto();
+  img.style.transform = img.style.opacity = '';
+  if (s.dx < -60 && Math.abs(s.dx) > Math.abs(s.dy)) showPhoto(pvIndex + 1);
+  else if (s.dx > 60 && Math.abs(s.dx) > Math.abs(s.dy)) showPhoto(pvIndex - 1);
+});
+document.addEventListener('keydown', e => {
+  if (pvIndex < 0) return;
+  e.stopPropagation();   // пока открыто фото, стрелки листают фото, а не перематывают трек
+  if (e.key === 'Escape') closePhoto();
+  if (e.key === 'ArrowRight') showPhoto(pvIndex + 1);
+  if (e.key === 'ArrowLeft') showPhoto(pvIndex - 1);
+}, true);
+
+// для проверки: window.player.addFiles([...File]), window.player.addPhotos([...File])
+window.player = { addFiles, addPhotos, openOnce, sync };
 </script>
 </body>
 </html>
