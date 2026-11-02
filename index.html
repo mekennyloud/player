@@ -1670,7 +1670,12 @@ $('dupBtn').onclick = () => { closeMenu(); checkDuplicates(false); };
 // ---------- синхронизация с Mac ----------
 // На Mac работает «Медиатека» (через Tailscale): облегчённые копии файлов и общие рейтинги/тексты/позиции.
 // Синхронизация вручную, когда удобно (например, раз в неделю): всё остальное время плеер работает сам.
-const readSyncTabs = () => [...new Set((JSON.parse(localStorage.getItem('syncTabs') || 'null') || MEDIA_CATS.map(c => c.id)).map(normTab))];
+const readSyncTabs = () => [...new Set((JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id)).map(normTab))];
+// вкладка «Photos» появилась позже — у тех, кто уже выбирал вкладки, включаем её один раз сами
+if (localStorage.getItem('syncTabs') && !localStorage.getItem('syncPhotosAdded')) {
+  localStorage.setItem('syncTabs', JSON.stringify([...readSyncTabs(), 'photos']));
+  localStorage.setItem('syncPhotosAdded', '1');
+}
 let syncTabs = readSyncTabs();
 let syncing = false;
 const syncAddr = () => (localStorage.getItem('syncAddr') || '').trim().replace(/\/+$/, '');
@@ -1685,7 +1690,7 @@ function updateSyncLabel() {
 }
 function renderSyncSheet() {
   $('syncAddr').value = localStorage.getItem('syncAddr') || '';
-  $('syncTabs').innerHTML = MEDIA_CATS.map(c =>
+  $('syncTabs').innerHTML = CATS.map(c =>
     `<label><input type="checkbox" data-tab="${c.id}" ${syncTabs.includes(c.id) ? 'checked' : ''}>${c.name}</label>`).join('');
   const last = +localStorage.getItem('lastSync');
   if (!syncing) $('syncStatus').textContent = last
@@ -1782,7 +1787,7 @@ async function sync() {
   syncTabs = readSyncTabs();
   $('syncBtn').classList.add('spin');
   $('syncNow').textContent = 'Stop'; $('syncNow').classList.remove('primary'); $('syncNow').classList.add('danger');
-  let added = 0, changed = 0, removed = 0;
+  let added = 0, changed = 0, removed = 0, sent = 0;
   try {
     syncStatus('Connecting to Mac…');
     const { items: remoteRaw, mac } = await api('/api/index');
@@ -1883,7 +1888,19 @@ async function sync() {
       await refresh();
     }
 
-    // 3. удалённое на Mac или из снятых вкладок — убираем с устройства (рейтинги и тексты остаются на Mac)
+    // 3. фото — общая лента на всех устройствах
+    let photoNote = '';
+    if (syncTabs.includes('photos')) {
+      try {
+        const p = await syncPhotos();
+        added += p.added; removed += p.removed; sent = p.sent;
+      } catch (e) {
+        if (e.message !== 'HTTP 404') throw e;
+        photoNote = '\nPhotos weren’t synced: restart Mediateka on your Mac to get the new version.';   // старый сервер на Mac
+      }
+    }
+
+    // 4. удалённое на Mac или из снятых вкладок — убираем с устройства (рейтинги и тексты остаются на Mac)
     stopIfAborted();
     const keep = new Set(want.map(r => r.id));
     for (const m of await getAllMeta()) {
@@ -1899,8 +1916,9 @@ async function sync() {
     if (added) parts.push('new files: ' + added);
     if (changed) parts.push('updated: ' + changed);
     if (removed) parts.push('removed from device: ' + removed);
+    if (sent) parts.push('photos sent to Mac: ' + sent);
     const w = watchedHere();
-    syncStatus('Done. ' + (parts.join(' · ') || 'Already up to date.')
+    syncStatus('Done. ' + (parts.join(' · ') || 'Already up to date.') + photoNote
       + (w.length ? `\nWatched or finished: ${w.length} · ${fmtSize(w.reduce((s, m) => s + (m.size || 0), 0))} can be freed in ☰ → Storage` : ''));
     toast('Synced' + (parts.length ? ': ' + parts.join(' · ') : ''));
     setTimeout(() => checkDuplicates(true), 4500);   // после подсказки о синхронизации — проверка дублей
@@ -1924,6 +1942,63 @@ async function sync() {
   }
 }
 updateSyncLabel();
+
+// Фото: новые с устройства — на Mac (в ~/Медиатека/Фото), новые с Mac — сюда, удалённые на любом устройстве —
+// удаляются и на остальных (на Mac — в Корзину). Положенные в папку на Mac вручную тоже появятся на устройствах.
+const photoGone = () => JSON.parse(localStorage.getItem('photoGone') || '[]');
+async function syncPhotos() {
+  let added = 0, removed = 0, sent = 0;
+  const signal = syncAbort && syncAbort.signal;
+  const gone = photoGone();
+  if (gone.length) { await api('/api/photos/delete', { names: gone }); localStorage.removeItem('photoGone'); }
+  const { photos: remote, deleted } = await api('/api/photos');
+  await loadPhotos();
+  const dead = new Set(deleted);
+  for (const p of photos.filter(p => p.mac && dead.has(p.mac))) {
+    await idb('photos', 'readwrite', s => s.delete(p.id));
+    if (photoThumbs.has(p.id)) { URL.revokeObjectURL(photoThumbs.get(p.id)); photoThumbs.delete(p.id); }
+    removed++;
+  }
+  // отсюда — на Mac
+  const up = photos.filter(p => !p.mac && !dead.has(p.mac));
+  for (const [i, p] of up.entries()) {
+    stopIfAborted();
+    syncStatus(`Sending photos to Mac: ${i + 1} of ${up.length}`, (i + 1) / up.length);
+    const name = `${p.added}-${String(p.idx || 0).padStart(3, '0')}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const r = await fetch(syncAddr() + '/api/photo?name=' + encodeURIComponent(name),
+      { method: 'POST', headers: { 'Content-Type': 'image/jpeg', 'X-Player': '1' }, body: p.full, signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    p.mac = (await r.json()).name;
+    await idb('photos', 'readwrite', s => s.put(p));
+    sent++;
+  }
+  // с Mac — сюда
+  const have = new Set(photos.map(p => p.mac).filter(Boolean));
+  const down = remote.filter(r => !have.has(r.name) && !dead.has(r.name));
+  for (const [i, r] of down.entries()) {
+    stopIfAborted();
+    syncStatus(`Getting photos: ${i + 1} of ${down.length}`, (i + 1) / down.length);
+    const res = await fetch(syncAddr() + '/photos/' + encodeURIComponent(r.name), { cache: 'no-store', signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    let img;
+    try { img = await decodeImage(blob); } catch (e) { continue; }   // не картинка — пропускаем
+    // своё фото с другого устройства уже маленькое; большое, положенное на Mac вручную, — уменьшаем
+    const full = blob.size < 1.5e6 && Math.max(img.width, img.height) <= 2048 && blob.type === 'image/jpeg'
+      ? blob : await toJpeg(img, 2048, false, 0.85);
+    const thumb = await toJpeg(img, 400, true, 0.8);
+    if (img.close) img.close();
+    try {
+      await idb('photos', 'readwrite', s => s.put({ id: 'ph:mac:' + r.name, added: r.added, idx: r.idx, src: 'mac:' + r.name,
+                                                    mac: r.name, full, thumb, size: full.size + thumb.size }));
+    } catch (e) {
+      if (isQuota(e)) throw new Error('This device is out of space for more photos. Free some up in ☰ → Storage.');
+      throw e;
+    }
+    added++;
+  }
+  return { added, removed, sent };
+}
 
 // скачать с Mac один файл с ☁ (по нажатию в списке)
 let downloading = null;
@@ -2119,8 +2194,11 @@ function closePhoto() {
 $('photos').onclick = e => { const t = e.target.closest('[data-i]'); if (t) showPhoto(+t.dataset.i); };
 $('pvClose').onclick = closePhoto;
 $('pvDel').onclick = async () => {
-  const p = photos[pvIndex]; if (!p || !confirm('Delete this photo from the player?')) return;
+  const p = photos[pvIndex];
+  if (!p || !confirm(p.mac ? 'Delete this photo? It will also disappear from your other devices after Sync.' : 'Delete this photo from the player?')) return;
   await idb('photos', 'readwrite', s => s.delete(p.id));
+  // с Mac и других устройств — при следующей синхронизации
+  if (p.mac) localStorage.setItem('photoGone', JSON.stringify([...new Set([...photoGone(), p.mac])]));
   URL.revokeObjectURL(photoThumbs.get(p.id)); photoThumbs.delete(p.id);
   const i = pvIndex;
   await refresh();
