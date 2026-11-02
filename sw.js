@@ -1,6 +1,6 @@
 // Кэширует сам плеер, чтобы он открывался без интернета.
 // При обновлении плеера увеличь номер версии.
-const CACHE = 'player-v3';
+const CACHE = 'player-v4';
 const FILES = ['./', 'index.html', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
