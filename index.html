@@ -171,6 +171,15 @@
   .wave input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
   .times { display: flex; justify-content: space-between; padding: 6px 20px 0; font: 500 11px var(--mono); }
   .np-body { flex: 1; display: flex; flex-direction: column; }
+  .vid-panel { display: none; padding: 22px 20px 0; }
+  .player.is-video .vid-panel { display: block; }
+  .player.is-video .wave, .player.is-video .times, .player.is-video .controls { display: none; }
+  .vbar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .vbar i { display: block; height: 100%; width: 0; background: var(--red); }
+  .vinfo { display: flex; justify-content: space-between; padding-top: 8px; font: 500 11px var(--mono); text-transform: uppercase; }
+  .vinfo span:first-child { color: var(--red); }
+  .vbig { width: 100%; min-height: 58px; margin-top: 26px; font-size: 13px; border-radius: 29px; }
+  .vsmall { width: 100%; margin-top: 10px; }
   /* кнопки прижаты к низу экрана */
   .controls { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding: 28px 18px 8px; }
   .ctl { width: 52px; height: 52px; display: grid; place-items: center; position: relative; color: var(--ink); }
@@ -217,7 +226,7 @@
   .btn.primary { background: var(--red); border-color: var(--red); color: #fff; }
   .btn.danger { border-color: var(--red); color: var(--red); }
   .btn:active { transform: scale(.98); }
-  .cats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .cats button { min-height: 40px; border-radius: 20px; border: 1.5px solid var(--line); font: 500 11px var(--mono); text-transform: uppercase; }
   .cats button.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
   .pic { display: flex; gap: 12px; align-items: center; }
@@ -309,6 +318,13 @@
       <div class="np-body">
         <h2 class="np-title" id="title"></h2>
         <div class="np-sub"><span id="npTab"></span><div class="rate" id="rate"></div></div>
+        <!-- видео: где остановилась + просмотр на весь экран (волна и кнопки не нужны) -->
+        <div class="vid-panel" id="vidPanel">
+          <div class="vbar"><i id="vbarFill"></i></div>
+          <div class="vinfo"><span id="vStopped"></span><span id="vTotal"></span></div>
+          <button class="btn primary vbig" id="vWatch">▶ Watch full screen</button>
+          <button class="btn vsmall" id="vRestart">Start over</button>
+        </div>
         <div class="wave"><div class="bars" id="bars"></div><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek"></div>
         <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
         <!-- кнопки — внизу экрана: −10 · предыдущий · играть · следующий · +10 -->
@@ -421,6 +437,10 @@
     <div class="grip"></div>
     <div class="sheet-head"><h2 id="isTitle"></h2><button class="done" data-close>Done</button></div>
     <div class="field">
+      <div class="label">Title</div>
+      <input class="addr" id="isName" type="text" autocomplete="off" enterkeyhint="done" style="font-family:var(--sans)">
+    </div>
+    <div class="field">
       <div class="label">Rating</div>
       <div class="rate" id="isRate"></div>
     </div>
@@ -497,14 +517,15 @@ const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), d
 // ---------- вкладки ----------
 const CATS = [
   { id: 'music', name: 'Music', unit: ['track', 'tracks'], icon: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>' },
+  { id: 'anime', name: 'Anime', unit: ['video', 'videos'], icon: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8l-6 4 6 4z"/>' },
   { id: 'audiobooks', name: 'Audiobooks', unit: ['file', 'files'], icon: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v15H6.5A2.5 2.5 0 0 0 4 20.5 2.5 2.5 0 0 0 6.5 23H20"/>' },
-  { id: 'video', name: 'Videos', unit: ['video', 'videos'], icon: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8l-6 4 6 4z"/>' },
-  { id: 'movies', name: 'Movies', unit: ['movie', 'movies'], icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>' },
 ];
 // вкладки на Mac — названия папок в ~/Медиатека
-const MAC_TABS = { 'Музыка': 'music', 'Аудиокниги': 'audiobooks', 'Видео': 'video', 'Фильмы': 'movies' };
+const MAC_TABS = { 'Музыка': 'music', 'Аудиокниги': 'audiobooks', 'Видео': 'anime', 'Фильмы': 'anime', 'Аниме': 'anime' };
+// бывшие вкладки «Videos» и «Movies» теперь одна — «Anime»
+const normTab = t => (t === 'video' || t === 'movies') ? 'anime' : t;
 const catSvg = (c, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg>`;
-const catOf = m => m.category || (m.kind === 'video' ? 'video' : 'music');   // старые записи — по типу файла
+const catOf = m => normTab(m.category) || (m.kind === 'video' ? 'anime' : 'music');   // старые записи — по типу файла
 const catById = id => CATS.find(c => c.id === id) || CATS[0];
 
 // ---------- утилиты ----------
@@ -517,6 +538,8 @@ const kindOf = f => {
   return /\.(mp4|m4v|mov|webm|mkv)$/i.test(f.name) ? 'video' : 'audio';
 };
 const prettyName = n => n.replace(/\.[^.]+$/, '');
+// название, которое видно в плеере: своё (переименованное) или из имени файла
+const titleOf = m => (m.title || '').trim() || prettyName(m.name);
 const pad2 = n => String(n).padStart(2, '0');
 function fmtTime(s) {
   if (!isFinite(s) || s < 0) s = 0;
@@ -570,7 +593,7 @@ let sheetItem = null;    // дорожка, открытая в окне «До�
 const covers = new Map(); // id → адрес картинки
 const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 let speed = parseFloat(localStorage.getItem('speed')) || 1;
-let tab = localStorage.getItem('tab') || 'music';
+let tab = normTab(localStorage.getItem('tab')) || 'music';
 // старые названия сортировки → новые
 let sort = { rating: 'rating-desc', name: 'az' }[localStorage.getItem('sort')] || localStorage.getItem('sort') || 'rating-desc';
 let shuffle = new Map();   // для «Shuffle»: порядок держится, пока не выберешь его снова
@@ -631,9 +654,9 @@ function renderTabs() {
 function visibleItems() {
   const q = query.trim().toLowerCase();
   const list = items.filter(m => catOf(m) === tab &&
-    (!q || prettyName(m.name).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
+    (!q || titleOf(m).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
   const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added);
-  const byName = (a, b) => prettyName(a.name).localeCompare(prettyName(b.name), 'en', { numeric: true });
+  const byName = (a, b) => titleOf(a).localeCompare(titleOf(b), 'en', { numeric: true });
   const rnd = m => { if (!shuffle.has(m.id)) shuffle.set(m.id, Math.random()); return shuffle.get(m.id); };
   if (sort === 'rating-desc') list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || recent(a, b));
   else if (sort === 'rating-asc') list.sort((a, b) => (a.rating || 0) - (b.rating || 0) || recent(a, b));
@@ -667,7 +690,10 @@ async function refresh() {
     const parts = [];
     if (m.busy) parts.push('Copying…');
     else {
-      if (m.duration) parts.push(res && m.position > 1 && !m.done ? fmtTime(m.position) + ' / ' + fmtTime(m.duration) : fmtTime(m.duration));
+      const started = res && m.position > 1 && !m.done;
+      if (m.duration) parts.push(!started ? fmtTime(m.duration)
+        : catOf(m) === 'anime' ? 'stopped at ' + fmtTime(m.position) + ' · ' + fmtTime(m.duration)
+        : fmtTime(m.position) + ' / ' + fmtTime(m.duration));
       if (isCur) parts.push('<span class="red">playing</span>');
       if (res && m.done) parts.push(catOf(m) === 'audiobooks' ? 'finished' : 'watched');
       if (!m.stored) parts.push('<span class="red">in Files</span>');
@@ -676,7 +702,7 @@ async function refresh() {
       <div style="min-width:0"><div class="name"></div><div class="sub">${parts.join(' · ')}</div></div>
       <button class="more" aria-label="Track settings">${ICON_MORE}</button>
       ${pct > 0 && !m.done ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}`;
-    li.querySelector('.name').textContent = prettyName(m.name);
+    li.querySelector('.name').textContent = titleOf(m);
     paintThumb(li.querySelector('.thumb'), m);
     li.onclick = e => {
       if (e.target.closest('.more')) return openItemSheet(m);
@@ -735,8 +761,8 @@ async function openOnce(f) {
 }
 
 async function remove(m) {
-  const what = m.stored ? 'Delete “' + prettyName(m.name) + '” from the player?'
-                        : 'Remove “' + prettyName(m.name) + '” from the list? The file stays in Files.';
+  const what = m.stored ? 'Delete “' + titleOf(m) + '” from the player?'
+                        : 'Remove “' + titleOf(m) + '” from the list? The file stays in Files.';
   if (!confirm(what)) return false;
   if (current && current.id === m.id) stop();
   if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
@@ -746,7 +772,7 @@ async function remove(m) {
 }
 
 // у каждого синхронизируемого поля — время последнего изменения: при синхронизации побеждает более свежее
-const SYNC_FIELDS = ['rating', 'category', 'text', 'cover', 'position', 'done', 'lastPlayed', 'duration'];
+const SYNC_FIELDS = ['rating', 'category', 'text', 'cover', 'position', 'done', 'lastPlayed', 'duration', 'title'];
 function touch(m, ...names) {
   m.ts = m.ts || {};
   const now = Date.now();
@@ -782,13 +808,27 @@ function openItemSheet(m) {
 }
 function renderItemSheet() {
   const m = sheetItem; if (!m) return;
-  $('isTitle').textContent = prettyName(m.name);
+  $('isTitle').textContent = titleOf(m);
+  $('isName').value = titleOf(m);
+  $('isName').placeholder = prettyName(m.name);
   rateButtons($('isRate'), m);
   paintThumb($('isThumb'), m, 26);
   $('isCoverDel').style.display = m.hasCover ? '' : 'none';
   $('isCats').innerHTML = CATS.map(c => `<button data-cat="${c.id}" class="${catOf(m) === c.id ? 'on' : ''}">${c.name}</button>`).join('');
   $('isText').textContent = m.text ? 'Open text' : 'Add text';
 }
+// переименование: сохраняем по Enter/«Done» на клавиатуре и при уходе из поля; пустое — вернуть имя файла
+async function saveName() {
+  const m = sheetItem; if (!m) return;
+  const v = $('isName').value.trim();
+  const title = v === prettyName(m.name) ? '' : v;
+  if (title === (m.title || '')) return;
+  await update(m, { title });
+  $('isTitle').textContent = titleOf(m);
+  if (current && current.id === m.id) setupMediaSession(current);
+}
+$('isName').addEventListener('change', saveName);
+$('isName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('isName').blur(); } });
 $('isCats').onclick = e => {
   const b = e.target.closest('button'); if (!b || !sheetItem) return;
   update(sheetItem, { category: b.dataset.cat }).then(renderItemSheet);
@@ -819,7 +859,7 @@ $('isDelete').onclick = async () => { if (await remove(sheetItem)) closeSheets()
 function openTextSheet(m) {
   if (!m) return;
   sheetItem = m;
-  $('tsTitle').textContent = prettyName(m.name);
+  $('tsTitle').textContent = titleOf(m);
   showText(!m.text);
   $('textSheet').classList.add('show');
 }
@@ -891,12 +931,12 @@ function paintWave(frac) {
 
 function renderPlayerMeta() {
   if (!current) return;
-  $('title').textContent = prettyName(current.name);
+  $('title').textContent = titleOf(current);
   fitTitle();
   rateButtons($('rate'), current);
   paintThumb($('cover'), current, 90);
   paintThumb($('miniThumb'), current, 18);
-  $('miniTitle').textContent = prettyName(current.name);
+  $('miniTitle').textContent = titleOf(current);
   const c = catById(catOf(current));
   const pos = queue.indexOf(current.id);
   $('npPos').textContent = c.name + (pos >= 0 ? ' · ' + pad2(pos + 1) + '/' + pad2(queue.length) : '');
@@ -915,6 +955,7 @@ async function play(m, file) {
 
   $('player').classList.remove('idle');
   $('stage').classList.toggle('is-video', m.kind === 'video');
+  $('player').classList.toggle('is-video', m.kind === 'video');
   renderWave(m);
   renderPlayerMeta();
   $('mini').classList.add('show');
@@ -925,16 +966,17 @@ async function play(m, file) {
     const pos = m.position || 0;
     if (resumable(m) && pos > 5 && pos < el.duration - 5 && !m.done) {
       el.currentTime = pos;
-      toast('Resumed at ' + fmtTime(pos), 'Start over', () => { el.currentTime = 0; });
+      // у видео место и так написано крупно — подсказка не нужна
+      if (m.kind !== 'video') toast('Resumed at ' + fmtTime(pos), 'Start over', () => { el.currentTime = 0; });
     }
-    m.done = false;
+    if (m.kind !== 'video') m.done = false;
     updateUI();
   }, { once: true });
 
   m.lastPlayed = Date.now();
   touch(m, 'lastPlayed');
   putMeta(m);
-  el.play().catch(() => {});
+  if (m.kind !== 'video') el.play().catch(() => {});   // видео смотрим кнопкой «Watch» на весь экран
   setupMediaSession(m);
   refresh();
 }
@@ -993,6 +1035,7 @@ function updateUI() {
   const icon = el.paused ? ICON_PLAY : ICON_PAUSE;
   $('playIcon').innerHTML = icon; $('miniIcon').innerHTML = icon;
   $('player').classList.toggle('playing', !el.paused);
+  if (current && current.kind === 'video') renderVideoPanel();
   if ('mediaSession' in navigator && d && navigator.mediaSession.setPositionState) {
     try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(t, d), playbackRate: el.playbackRate }); } catch (e) {}
   }
@@ -1030,7 +1073,7 @@ function setupMediaSession(m) {
   const ms = navigator.mediaSession;
   const art = covers.get(m.id);
   ms.metadata = new MediaMetadata({
-    title: prettyName(m.name), artist: catById(catOf(m)).name,
+    title: titleOf(m), artist: catById(catOf(m)).name,
     artwork: art ? [{ src: art, sizes: '800x800', type: 'image/jpeg' }]
                  : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
   });
@@ -1075,6 +1118,33 @@ $('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[
 $('play').onclick = togglePlay;
 $('prevBtn').onclick = prevAction;
 $('nextBtn').onclick = nextAction;
+// ---------- видео: где остановилась и просмотр на весь экран ----------
+function renderVideoPanel() {
+  if (!current) return;
+  const d = (el && el.duration) || current.duration || 0;
+  const t = el && isFinite(el.currentTime) ? el.currentTime : (current.position || 0);
+  const started = t > 5 && !current.done;
+  $('vbarFill').style.width = (d ? Math.min(100, (current.done ? 100 : t / d * 100)) : 0) + '%';
+  $('vStopped').textContent = current.done ? 'Watched' : started ? 'Stopped at ' + fmtTime(t) : 'Not started';
+  $('vTotal').textContent = d ? fmtTime(d) : '';
+  $('vWatch').textContent = started ? '▶ Continue from ' + fmtTime(t) : '▶ Watch full screen';
+  $('vRestart').style.display = started || current.done ? '' : 'none';
+}
+function watchFull(fromStart) {
+  if (!current || !el) return;
+  if (fromStart) { el.currentTime = 0; current.done = false; }
+  // на iPhone/iPad — системный полноэкранный плеер; вызываем сразу по нажатию, иначе iOS не разрешит
+  if (video.webkitEnterFullscreen) { try { video.webkitEnterFullscreen(); } catch (e) {} }
+  else if (video.requestFullscreen) video.requestFullscreen().catch(() => {});
+  el.play().catch(() => {});
+}
+$('vWatch').onclick = () => watchFull(false);
+$('vRestart').onclick = () => watchFull(true);
+// вышла из полноэкранного режима — ставим на паузу и запоминаем место
+const leftFullscreen = () => { if (current && current.kind === 'video' && el) { el.pause(); savePosition(true); renderVideoPanel(); refresh(); } };
+video.addEventListener('webkitendfullscreen', leftFullscreen);
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) leftFullscreen(); });
+
 $('back10').onclick = () => skip(-10);
 $('fwd10').onclick = () => skip(10);
 $('back').onclick = () => $('app').classList.remove('show-player');
@@ -1089,14 +1159,14 @@ function applyLibHidden(hidden) {
 $('libToggle').onclick = () => applyLibHidden(!$('app').classList.contains('lib-hidden'));
 applyLibHidden(!!localStorage.getItem('libHidden'));
 $('mini').onclick = e => {
-  if (e.target.closest('#miniPlay')) return togglePlay();
+  if (e.target.closest('#miniPlay')) return current && current.kind === 'video' ? $('app').classList.add('show-player') : togglePlay();
   if (e.target.closest('#miniPrev')) return prevAction();
   if (e.target.closest('#miniNext')) return nextAction();
   $('app').classList.add('show-player');
 };
 $('textBtn').onclick = () => { closeMenu(); current && openTextSheet(current); };
 $('pmTrack').onclick = () => { closeMenu(); current && openItemSheet(current); };
-video.onclick = togglePlay;
+video.onclick = () => watchFull(false);
 
 $('seek').addEventListener('input', () => {
   dragging = true;
@@ -1289,7 +1359,7 @@ function openDupSheet() {
     ? '<div class="empty-dup">No duplicates 👍</div>'
     : dupGroups.map((g, gi) => `<div class="dup-group" data-g="${gi}">
         ${g.items.map((m, i) => `<label class="dup-item"><input type="radio" name="keep${gi}" value="${i}" ${i ? '' : 'checked'}>
-          <div><div class="dup-name">${esc(prettyName(m.name))}</div>
+          <div><div class="dup-name">${esc(titleOf(m))}</div>
           <div class="dup-sub">${catById(catOf(m)).name} · ${src(m)} · ${fmtSize(m.size)}${m.duration ? ' · ' + fmtTime(m.duration) : ''}${m.rating ? ' · ' + '★'.repeat(m.rating) : ''}</div></div></label>`).join('')}
         <div class="dup-actions"><button class="btn primary" data-act="clean">Keep checked</button><button class="btn" data-act="ignore">Not duplicates</button></div>
       </div>`).join('');
@@ -1327,7 +1397,8 @@ $('dupBtn').onclick = () => { closeMenu(); checkDuplicates(false); };
 // ---------- синхронизация с Mac ----------
 // На Mac работает «Медиатека» (через Tailscale): облегчённые копии файлов и общие рейтинги/тексты/позиции.
 // Синхронизация вручную, когда удобно (например, раз в неделю): всё остальное время плеер работает сам.
-let syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
+const readSyncTabs = () => [...new Set((JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id)).map(normTab))];
+let syncTabs = readSyncTabs();
 let syncing = false;
 const syncAddr = () => (localStorage.getItem('syncAddr') || '').trim().replace(/\/+$/, '');
 
@@ -1401,7 +1472,7 @@ async function sync() {
   }
   syncing = true;
   syncAbort = new AbortController();
-  syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
+  syncTabs = readSyncTabs();
   $('syncBtn').classList.add('spin');
   $('syncNow').textContent = 'Stop'; $('syncNow').classList.remove('primary'); $('syncNow').classList.add('danger');
   let added = 0, changed = 0, removed = 0;
