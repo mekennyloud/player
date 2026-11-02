@@ -600,13 +600,14 @@ async function refresh() {
   for (const m of shown) {
     const li = document.createElement('li');
     li.className = 'item' + (current && current.id === m.id ? ' current' : '') + (m.busy ? ' busy' : '');
-    const pct = m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0;
+    const res = resumable(m);
+    const pct = res && m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0;
     const parts = [];
     if (m.busy) parts.push('Копирую в плеер…');
     else {
       if (m.rating) parts.push(`<span class="stars">${'★'.repeat(m.rating)}</span>`);
-      if (m.duration) parts.push(m.position > 1 && !m.done ? fmtTime(m.position) + ' из ' + fmtTime(m.duration) : fmtTime(m.duration));
-      if (m.done) parts.push('просмотрено');
+      if (m.duration) parts.push(res && m.position > 1 && !m.done ? fmtTime(m.position) + ' из ' + fmtTime(m.duration) : fmtTime(m.duration));
+      if (res && m.done) parts.push(catOf(m) === 'audiobooks' ? 'прослушано' : 'просмотрено');
       parts.push(fmtSize(m.size));
       if (m.text) parts.push('текст');
       if (!m.stored) parts.push('<span class="warn">в «Файлах»</span>');
@@ -828,7 +829,7 @@ async function play(m, file) {
   el.addEventListener('loadedmetadata', () => {
     if (!m.duration || Math.abs(m.duration - el.duration) > 1) { m.duration = el.duration; putMeta(m); }
     const pos = m.position || 0;
-    if (pos > 5 && pos < el.duration - 5 && !m.done) {
+    if (resumable(m) && pos > 5 && pos < el.duration - 5 && !m.done) {
       el.currentTime = pos;
       toast('Продолжаю с ' + fmtTime(pos), 'С начала', () => { el.currentTime = 0; });
     }
@@ -852,10 +853,14 @@ function stop(hide = true) {
   if (hide) { current = null; $('player').classList.add('idle'); $('app').classList.remove('show-player'); }
 }
 
+// Видео, фильмы и аудиокниги продолжаются с места остановки (даже после полного закрытия плеера),
+// музыка всегда играет с начала — её место не запоминаем.
+function resumable(m) { return catOf(m) !== 'music'; }
+
 function savePosition(force) {
-  if (!current || !el || !isFinite(el.currentTime)) return;
+  if (!current || !el || !isFinite(el.currentTime) || !resumable(current)) return;
   const now = Date.now();
-  if (!force && now - lastSave < 5000) return;
+  if (!force && now - lastSave < 3000) return;
   lastSave = now;
   current.position = el.currentTime;
   touch(current, 'position', 'done');
@@ -883,6 +888,7 @@ for (const x of [audio, video]) {
   x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
   x.addEventListener('ended', () => {
     if (x !== el || !current) return;
+    if (!resumable(current)) { updateUI(); return; }   // песня доиграла — отмечать нечего
     current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
   });
   x.addEventListener('error', () => {
@@ -1217,7 +1223,14 @@ $('syncTabs').onchange = () => {
   syncTabs = [...$('syncTabs').querySelectorAll('input:checked')].map(i => i.dataset.tab);
   localStorage.setItem('syncTabs', JSON.stringify(syncTabs));
 };
-$('syncNow').onclick = () => { localStorage.setItem('syncAddr', $('syncAddr').value.trim()); sync(); };
+// одна кнопка: «Синхронизировать», а пока идёт синхронизация — «Остановить»
+$('syncNow').onclick = () => {
+  if (syncing) { syncAbort && syncAbort.abort(); return; }
+  localStorage.setItem('syncAddr', $('syncAddr').value.trim());
+  sync();
+};
+let syncAbort = null;
+const stopIfAborted = () => { if (syncAbort && syncAbort.signal.aborted) throw new DOMException('остановлено', 'AbortError'); };
 
 function syncStatus(text, frac) {
   $('syncStatus').innerHTML = esc(text) + (frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : '');
@@ -1225,15 +1238,17 @@ function syncStatus(text, frac) {
 const blobToDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
 
 async function api(path, body) {
+  const signal = syncAbort && syncAbort.signal;
   const r = await fetch(syncAddr() + path, body
-    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }
+    : { cache: 'no-store', signal });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
 
 // скачать файл, сообщая, сколько байт пришло
 async function download(url, onBytes) {
-  const r = await fetch(url, { cache: 'no-store' });
+  const r = await fetch(url, { cache: 'no-store', signal: syncAbort && syncAbort.signal });
   if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
   const reader = r.body.getReader();
   const chunks = [];
@@ -1254,8 +1269,10 @@ async function sync() {
     return;
   }
   syncing = true;
+  syncAbort = new AbortController();
   syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
-  $('syncBtn').classList.add('spin'); $('syncNow').disabled = true;
+  $('syncBtn').classList.add('spin');
+  $('syncNow').textContent = 'Остановить'; $('syncNow').classList.remove('primary'); $('syncNow').classList.add('danger');
   let added = 0, changed = 0, removed = 0;
   try {
     syncStatus('Подключаюсь к Mac…');
@@ -1316,6 +1333,7 @@ async function sync() {
     let got = 0, lastPaint = 0;
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
     for (const [i, r] of missing.entries()) {
+      stopIfAborted();
       const paint = () => syncStatus(`Скачиваю ${i + 1} из ${missing.length}: ${r.title}\n${fmtSize(got)} из ${fmtSize(total)}`,
                                      total ? got / total : null);
       paint();
@@ -1342,6 +1360,7 @@ async function sync() {
     }
 
     // 3. удалённое на Mac или из снятых вкладок — убираем с устройства (рейтинги и тексты остаются на Mac)
+    stopIfAborted();
     const keep = new Set(want.map(r => r.id));
     for (const m of await getAllMeta()) {
       if (m.id.startsWith('mac:') && !keep.has(m.id) && !(current && current.id === m.id)) {
@@ -1360,13 +1379,19 @@ async function sync() {
     toast('Синхронизировано' + (parts.length ? ': ' + parts.join(' · ') : ''));
     setTimeout(() => checkDuplicates(true), 4500);   // после подсказки о синхронизации — проверка дублей
   } catch (e) {
-    const offline = e.name === 'TypeError' || /^HTTP/.test(e.message);
-    syncStatus('Не получилось. ' + (offline
-      ? 'Mac не отвечает: проверь, что он включён, а в Tailscale на этом устройстве включён переключатель.'
-      : e.message));
+    if (e.name === 'AbortError' || syncAbort.signal.aborted) {
+      syncStatus('Синхронизация остановлена.' + (added ? ` Уже скачанное (${added}) осталось на устройстве.` : '')
+        + ' Нажми «Синхронизировать», чтобы продолжить.');
+    } else {
+      const offline = e.name === 'TypeError' || /^HTTP/.test(e.message);
+      syncStatus('Не получилось. ' + (offline
+        ? 'Mac не отвечает: проверь, что он включён, на нём запущена «Медиатека», а в Tailscale на этом устройстве включён переключатель.'
+        : e.message));
+    }
   } finally {
     syncing = false;
-    $('syncBtn').classList.remove('spin'); $('syncNow').disabled = false;
+    $('syncBtn').classList.remove('spin');
+    $('syncNow').textContent = 'Синхронизировать'; $('syncNow').classList.add('primary'); $('syncNow').classList.remove('danger');
     await refresh();
     updateSyncLabel();
   }
