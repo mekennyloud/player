@@ -1,389 +1,363 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Плеер">
-<meta name="theme-color" content="#121216">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Player">
+<meta name="theme-color" content="#f1eee8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
-<title>Плеер</title>
+<title>Player</title>
 <style>
+  /* шрифты лежат рядом с плеером — работает без интернета (лицензия OFL) */
+  @font-face { font-family: 'Inter Tight'; font-style: normal; font-weight: 400 800; font-display: swap;
+    src: url(fonts/InterTight-cyrillic.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'Inter Tight'; font-style: normal; font-weight: 400 800; font-display: swap;
+    src: url(fonts/InterTight-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 700; font-display: swap;
+    src: url(fonts/JetBrainsMono-cyrillic.woff2) format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 700; font-display: swap;
+    src: url(fonts/JetBrainsMono-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+  /* «Журнал»: бумага, огромные заголовки, моноширинные подписи, красный акцент */
   :root {
-    --bg: #121216; --panel: #1b1b21; --row: #22222a; --line: #2e2e38;
-    --text: #f2f2f5; --muted: #9a9aa8; --faint: #6b6b78;
-    --accent: #2fc28a; --accent-2: #1f8f9e; --danger: #ff6b6b; --star: #ffc53d;
-    --radius: 14px;
-    color-scheme: dark;
+    --paper: #f1eee8; --ink: #111111; --muted: #8c887f; --line: #d8d3c9; --field: #e7e3db;
+    --sheet: #f7f5f1; --mini: #111111; --mini-ink: #ffffff; --mini-muted: #a5a19a;
+    --red: #ff3b24; --red-ink: #ffffff;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter Tight', -apple-system, system-ui, sans-serif;
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: light) {
+  @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #f4f4f7; --panel: #ffffff; --row: #ebebf0; --line: #e2e2e8;
-      --text: #16161a; --muted: #6a6a78; --faint: #9a9aa6;
-      --accent: #12a06d; --accent-2: #137d8a; --star: #f5a700; color-scheme: light;
+      --paper: #121212; --ink: #f1eee8; --muted: #8a867e; --line: #2a2926; --field: #1e1d1b;
+      --sheet: #1a1918; --mini: #f1eee8; --mini-ink: #111111; --mini-muted: #6f6b63;
+      color-scheme: dark;
     }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
-  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 16px/1.35 var(--sans); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
   input[type=file] { display: none; }
   svg { display: block; }
+  .mono { font-family: var(--mono); text-transform: uppercase; letter-spacing: .2px; }
 
   .app { height: 100%; display: grid; grid-template-columns: 1fr; overflow: hidden; }
-  @media (min-width: 820px) { .app { grid-template-columns: minmax(340px, 420px) 1fr; } }
+  @media (min-width: 820px) { .app { grid-template-columns: minmax(360px, 440px) 1fr; } }
 
   /* ---------- медиатека ---------- */
-  .library { overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
-    border-right: 1px solid var(--line); }
-  .lib-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 4px 4px 14px; }
-  h1 { font-size: 30px; margin: 0; letter-spacing: -0.5px; }
-  .storage { font-size: 13px; color: var(--faint); }
-
-  .install { display: none; background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
-  .install b { color: var(--accent); }
+  .library { overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative;
+    padding: calc(env(safe-area-inset-top) + 14px) 0 calc(env(safe-area-inset-bottom) + 110px); border-right: 1px solid var(--line); }
+  @media (min-width: 820px) { .library { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); } }
+  .top { display: flex; justify-content: space-between; align-items: center; padding: 4px 20px 0; font: 700 12px var(--mono); letter-spacing: .5px; }
+  .burger { position: relative; width: 40px; height: 32px; display: grid; place-items: center; margin-right: -8px; }
+  .burger i { display: block; width: 22px; height: 2px; background: var(--ink); box-shadow: 0 6px 0 var(--ink), 0 -6px 0 var(--ink); }
+  .badge { position: absolute; top: -2px; right: 0; min-width: 16px; height: 16px; border-radius: 8px; padding: 0 4px; background: var(--red);
+    color: #fff; font: 700 9.5px/16px var(--mono); text-align: center; display: none; }
+  .has > .badge { display: block; }
+  .giant { margin: 14px 0 0; padding: 0 16px 0 16px; font-weight: 800; letter-spacing: -.055em; line-height: .84; white-space: nowrap;
+    text-transform: uppercase; font-size: 80px; overflow: hidden; }
+  .meta { display: flex; justify-content: space-between; padding: 10px 20px 0; font: 500 10.5px var(--mono); text-transform: uppercase; }
+  .tabs { display: flex; gap: 16px; padding: 18px 20px 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { font: 500 11px var(--mono); text-transform: uppercase; color: var(--muted); padding-bottom: 4px; white-space: nowrap;
+    border-bottom: 2px solid transparent; flex: none; }
+  .tab.active { color: var(--ink); border-color: var(--red); }
+  .tools { display: flex; gap: 8px; padding: 14px 20px 6px; }
+  .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border: 1.5px solid var(--ink);
+    border-radius: 20px; color: var(--muted); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: 16px var(--sans); }
+  .search .clear { display: none; color: var(--muted); }
+  .search.has .clear { display: block; }
+  .sort { flex: none; max-width: 42%; height: 38px; padding: 0 12px; border: 1.5px solid var(--ink); border-radius: 20px; background: none;
+    color: var(--ink); font: 500 11px var(--mono); text-transform: uppercase; -webkit-appearance: none; appearance: none; text-align: center; }
+  .install { display: none; margin: 10px 20px 0; padding: 12px 14px; border-radius: 12px; background: var(--red); color: #fff; font-size: 13.5px; }
   .install.show { display: block; }
 
-  .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 14px;
-    background: var(--panel); margin-bottom: 12px; }
-  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 7px; border-radius: 10px;
-    font-size: 12.5px; font-weight: 600; color: var(--muted); }
-  .tab .n { font-size: 11px; font-weight: 500; color: var(--faint); }
-  .tab.active { background: var(--row); color: var(--text); }
-  .tab.active svg { color: var(--accent); }
-
-  .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
-  .search { flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 42px; border-radius: 12px;
-    background: var(--panel); color: var(--faint); }
-  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 16px; }
-  .search .clear { display: none; color: var(--faint); }
-  .search.has .clear { display: block; }
-  .search { min-width: 0; }
-  .sort { flex: none; max-width: 40%; height: 42px; padding: 0 10px; border-radius: 12px; background: var(--panel); color: var(--text);
-    border: 0; font: inherit; font-size: 14px; font-weight: 600; -webkit-appearance: none; appearance: none; text-align: center; }
-
-  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px;
-    padding: 10px 12px; border-radius: 12px; background: var(--row); font-weight: 600; font-size: 15px;
-    text-align: center; cursor: pointer; user-select: none; -webkit-user-select: none; }
-  .btn.primary { background: var(--accent); color: #fff; }
-  .btn.danger { color: var(--danger); }
-  .btn:active { transform: scale(0.98); }
-  .hint { color: var(--faint); font-size: 12.5px; margin: 8px 4px 16px; }
-
-  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  .item { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 12px;
-    padding: 8px 4px 8px 8px; border-radius: 12px; background: var(--panel); cursor: pointer; position: relative; }
-  .item.current { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .thumb { width: 48px; height: 48px; border-radius: 10px; display: grid; place-items: center; overflow: hidden;
-    color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); flex: none; }
+  .list { list-style: none; margin: 0; padding: 4px 20px 0; }
+  .item { display: grid; grid-template-columns: 24px 44px 1fr 32px; gap: 12px; align-items: center; padding: 10px 0;
+    border-bottom: 1px solid var(--line); cursor: pointer; position: relative; }
+  .item .no { font: 500 10.5px var(--mono); color: var(--muted); }
+  .thumb { width: 44px; height: 44px; border-radius: 4px; overflow: hidden; display: grid; place-items: center; color: rgba(255,255,255,.55); flex: none; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .cat-audiobooks { background: linear-gradient(135deg, #f5a142, #e0624a); }
-  .cat-video { background: linear-gradient(135deg, #7b6cf6, #4b8bf5); }
-  .cat-movies { background: linear-gradient(135deg, #f0568c, #a347d6); }
-  .item .name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
-  .item .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 0 6px; align-items: center; }
-  .item .sub .warn { color: #e9a23b; }
-  .item .stars { color: var(--star); letter-spacing: 1px; font-size: 12px; }
-  .item .bar { position: absolute; left: 68px; right: 52px; bottom: 5px; height: 3px; border-radius: 2px;
-    background: var(--line); overflow: hidden; }
-  .item .bar i { display: block; height: 100%; background: var(--accent); }
-  .more { width: 40px; height: 40px; display: grid; place-items: center; color: var(--faint); border-radius: 10px; }
-  .more:active { background: var(--row); }
-  .item.busy { opacity: 0.6; pointer-events: none; }
+  .item .name { font-weight: 700; font-size: 14.5px; text-transform: uppercase; letter-spacing: -.2px; line-height: 1.12;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .item .sub { font: 500 9.5px var(--mono); text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+  .item .sub .red { color: var(--red); }
+  .item.current .name { color: var(--red); }
+  .item .bar { position: absolute; left: 80px; right: 44px; bottom: -1px; height: 2px; background: var(--line); }
+  .item .bar i { display: block; height: 100%; background: var(--red); }
+  .more { width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); }
+  .item.busy { opacity: .55; pointer-events: none; }
+  .empty { padding: 36px 20px; font: 500 11px/1.7 var(--mono); text-transform: uppercase; color: var(--muted); }
 
-  .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
-  .empty svg { margin: 0 auto 12px; color: var(--faint); }
+  /* ---------- мини-плеер (телефон) ---------- */
+  .mini { position: fixed; left: 10px; right: 10px; bottom: calc(env(safe-area-inset-bottom) + 10px); z-index: 4;
+    background: var(--mini); color: var(--mini-ink); border-radius: 18px; padding: 9px 10px 9px 9px; overflow: hidden;
+    display: none; grid-template-columns: 44px 1fr auto auto auto; gap: 10px; align-items: center; cursor: pointer;
+    box-shadow: 0 12px 30px rgba(0,0,0,.25); }
+  .mini.show { display: grid; }
+  .app.show-player .mini { display: none; }
+  @media (min-width: 820px) { .mini.show { display: none; } }
+  .mini::before { content: ""; position: absolute; left: 0; top: 0; height: 2px; width: var(--p, 0%); background: var(--red); }
+  .mini .thumb { width: 44px; height: 44px; border-radius: 6px; }
+  .mini .t { font-weight: 700; font-size: 13px; text-transform: uppercase; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mini .s { font: 500 9.5px var(--mono); color: var(--mini-muted); }
+  .mini .ib { width: 34px; height: 34px; display: grid; place-items: center; color: var(--mini-ink); }
+  .mini .pp { width: 40px; height: 40px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; }
 
-  /* ---------- плеер ---------- */
-  .player { display: flex; flex-direction: column; min-height: 0; background: var(--bg); overflow-y: auto;
-    padding: calc(env(safe-area-inset-top) + 8px) 20px calc(env(safe-area-inset-bottom) + 20px); }
+  /* ---------- сейчас играет ---------- */
+  .player { display: flex; flex-direction: column; min-height: 0; background: var(--paper); overflow-y: auto; overflow-x: hidden;
+    padding: calc(env(safe-area-inset-top) + 10px) 0 calc(env(safe-area-inset-bottom) + 20px); }
   @media (max-width: 819px) {
-    .player { position: fixed; inset: 0; transform: translateY(100%); transition: transform .28s ease; z-index: 5; }
+    .player { position: fixed; inset: 0; transform: translateY(100%); transition: transform .3s ease; z-index: 6; }
     .app.show-player .player { transform: none; }
   }
-  .player-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
-  .back { display: flex; align-items: center; gap: 2px; color: var(--accent); font-size: 17px; padding: 8px 4px; }
-  @media (min-width: 820px) { .back { visibility: hidden; } }
-
-  .stage { flex: 1; min-height: 160px; display: grid; place-items: center; margin: 4px 0 14px; position: relative; }
-  video { width: 100%; max-height: 100%; border-radius: var(--radius); background: #000; display: none; }
-  .stage.is-video video { display: block; }
-  .cover { width: min(66vw, 300px, 100%); aspect-ratio: 1; border-radius: 28px; display: grid; place-items: center; overflow: hidden;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
-    box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .np-top { display: flex; justify-content: space-between; align-items: center; padding: 4px 20px 0; min-height: 36px; font: 500 11px var(--mono); text-transform: uppercase; }
+  .np-top button { font: 500 11px var(--mono); text-transform: uppercase; padding: 6px 0; }
+  @media (min-width: 820px) { #back { visibility: hidden; } }
+  .stage { position: relative; margin: 22px 20px 0; flex: none; }
+  .art-wrap { position: relative; width: min(100%, 300px); aspect-ratio: 1; margin-right: auto; }
+  .vinyl { position: absolute; right: -15%; top: 4%; width: 92%; aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(circle, var(--red) 0 17%, #111 17.5% 19%, transparent 19%), repeating-radial-gradient(circle, #151515 0 2px, #232323 2px 3px);
+    animation: spin 6s linear infinite; animation-play-state: paused; transition: right .4s ease; }
+  .vinyl::after { content: ""; position: absolute; inset: 47.5%; border-radius: 50%; background: var(--paper); }
+  @media (prefers-color-scheme: dark) {   /* на тёмном фоне пластинка светлее, иначе сливается */
+    .vinyl { background: radial-gradient(circle, var(--red) 0 17%, #000 17.5% 19%, transparent 19%),
+      repeating-radial-gradient(circle, #2c2b29 0 2px, #3a3936 2px 3px); }
+  }
+  .player.playing .vinyl { animation-play-state: running; right: -22%; }
+  .cover { position: absolute; inset: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 18px 34px rgba(0,0,0,.22);
+    display: grid; place-items: center; color: rgba(255,255,255,.5); }
   .cover img { width: 100%; height: 100%; object-fit: cover; }
-  .stage.is-video .cover { display: none; }
-  .placeholder { color: var(--faint); text-align: center; display: none; }
-  .player.idle .stage > * { display: none; }
-  .player.idle .placeholder { display: block; }
-  .player.idle .meta, .player.idle .scrub, .player.idle .controls, .player.idle .extras, .player.idle .player-head .more { visibility: hidden; }
+  video { display: none; width: 100%; max-height: 52vh; border-radius: 6px; background: #000; }
+  .stage.is-video .art-wrap { display: none; }
+  .stage.is-video video { display: block; }
+  .placeholder { display: none; padding: 80px 0; font: 500 11px var(--mono); text-transform: uppercase; color: var(--muted); }
+  .player.idle .stage > *, .player.idle .np-body { display: none !important; }
+  .player.idle .placeholder { display: block !important; }
+  .player.idle .np-top > :not(#back) { visibility: hidden; }
 
-  .meta { text-align: center; margin-bottom: 10px; }
-  .title { font-size: 19px; font-weight: 700; overflow: hidden; text-overflow: ellipsis;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
-  .rate { display: flex; justify-content: center; gap: 2px; margin-top: 6px; }
-  .rate button { width: 38px; height: 34px; display: grid; place-items: center; color: var(--line); }
-  .rate button.on { color: var(--star); }
+  .np-title { margin: 24px 0 0; padding: 0 20px; font-weight: 800; letter-spacing: -.05em; line-height: .9; text-transform: uppercase;
+    font-size: 44px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
+  .np-sub { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px 0; font: 500 10.5px var(--mono); text-transform: uppercase; }
+  .rate { display: flex; gap: 0; }
+  .rate button { width: 26px; height: 28px; display: grid; place-items: center; color: var(--line); }
+  .rate button.on { color: var(--red); }
+  .wave { position: relative; height: 48px; margin: 20px 20px 0; }
+  .bars { position: absolute; inset: 0; display: flex; align-items: center; gap: 2px; pointer-events: none; }
+  .bars i { flex: 1; background: var(--ink); border-radius: 1px; }
+  .bars i.f { background: var(--line); }
+  .wave input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .times { display: flex; justify-content: space-between; padding: 6px 20px 0; font: 500 11px var(--mono); }
+  .controls { display: flex; justify-content: center; align-items: center; gap: 40px; padding: 22px 20px 0; }
+  .ctl { width: 54px; height: 54px; display: grid; place-items: center; position: relative; color: var(--ink); }
+  .ctl span { position: absolute; font: 700 9.5px var(--mono); top: 21px; }
+  .big { width: 78px; height: 78px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center;
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--red) 35%, transparent); }
+  .big:active, .mini .pp:active { transform: scale(.96); }
 
-  .scrub input { width: 100%; -webkit-appearance: none; appearance: none; height: 28px; background: transparent; margin: 0; }
-  .scrub input::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
-    background: linear-gradient(to right, var(--accent) var(--p, 0%), var(--line) var(--p, 0%)); }
-  .scrub input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-    background: #fff; margin-top: -7px; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
-  .times { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted);
-    font-variant-numeric: tabular-nums; margin-top: 2px; }
-
-  .controls { display: flex; justify-content: center; align-items: center; gap: 28px; margin: 12px 0 10px; }
-  .skip { width: 60px; height: 60px; display: grid; place-items: center; border-radius: 50%; position: relative; }
-  .skip span { position: absolute; font-size: 11px; font-weight: 700; top: 22px; }
-  .skip:active { background: var(--row); }
-  .play { width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--accent); color: #fff; box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 40%, transparent); }
-  .play:active { transform: scale(0.96); }
-
-  .extras { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
-  .pill { min-height: 40px; padding: 8px 16px; border-radius: 20px; background: var(--row); font-weight: 600; font-size: 15px;
-    display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
-  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-  .video-only { display: none; }
-  .player.is-video .video-only { display: flex; }
-
-  /* ---------- всплывающие окна ---------- */
-  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: none;
-    align-items: flex-end; justify-content: center; }
-  .sheet-bg.show { display: flex; }
-  @media (min-width: 820px) { .sheet-bg { align-items: center; } }
-  .sheet { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: var(--panel);
-    border-radius: 20px 20px 0 0; padding: 10px 18px calc(env(safe-area-inset-bottom) + 18px);
-    animation: up .22s ease; }
-  @media (min-width: 820px) { .sheet { border-radius: 20px; padding-bottom: 18px; } }
-  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
-  .grip { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 12px; }
-  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
-  .sheet-head h2 { font-size: 18px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .done { color: var(--accent); font-weight: 700; font-size: 16px; padding: 6px 2px; flex: none; }
-  .field { margin-bottom: 16px; }
-  .label { font-size: 13px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
-  .cats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-  .cats button { padding: 9px 4px; border-radius: 10px; background: var(--row); font-size: 13px; font-weight: 600; }
-  .cats button.on { background: var(--accent); color: #fff; }
-  .pic { display: flex; gap: 12px; align-items: center; }
-  .pic .thumb { width: 64px; height: 64px; border-radius: 12px; }
-  .pic .btns { display: flex; gap: 8px; flex-wrap: wrap; }
-  .pic .btn { min-height: 38px; font-size: 14px; padding: 8px 12px; }
-  .text-view { white-space: pre-wrap; font-size: 17px; line-height: 1.6; word-break: break-word; min-height: 120px; }
-  .text-view.empty-text { color: var(--faint); }
-  textarea { width: 100%; min-height: 50vh; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
-    font: inherit; font-size: 16px; line-height: 1.5; padding: 12px; resize: vertical; outline: 0; }
-  textarea:focus { border-color: var(--accent); }
-
-  .sync-btn { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 16px; background: var(--panel);
-    color: var(--accent); font-size: 13px; font-weight: 600; flex: none; }
-  .spin svg { animation: spin 1s linear infinite; }
+  /* ---------- меню ---------- */
   .menu-bg { position: fixed; inset: 0; z-index: 15; display: none; }
   .menu-bg.show { display: block; }
-  .menu { position: fixed; width: min(300px, calc(100vw - 24px)); background: var(--panel); border-radius: 16px; padding: 6px;
-    box-shadow: 0 16px 40px rgba(0,0,0,.45); border: 1px solid var(--line); animation: pop .15s ease; }
+  .menu { position: fixed; width: min(300px, calc(100vw - 24px)); background: var(--sheet); border: 1.5px solid var(--ink); border-radius: 16px;
+    padding: 6px; box-shadow: 0 20px 44px rgba(0,0,0,.25); animation: pop .15s ease; }
   @keyframes pop { from { transform: scale(.96); opacity: 0; } }
   .menu-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border-radius: 10px;
-    text-align: left; font-size: 15.5px; font-weight: 500; cursor: pointer; }
-  .menu-item:active, .menu-item:hover { background: var(--row); }
-  .menu-item > svg { color: var(--accent); flex: none; }
-  .menu-sub { font-size: 12.5px; color: var(--muted); font-weight: 400; margin-top: 1px; }
-  .menu-item .badge { position: static; margin-left: auto; display: none; }
-  .menu-item.has .badge { display: grid; }
-  #menuBtn.has { color: #e9a23b; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .lib-head .storage { flex: 1; min-width: 0; text-align: right; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .icon-btn { position: relative; width: 36px; height: 30px; display: grid; place-items: center; border-radius: 16px;
-    background: var(--panel); color: var(--muted); flex: none; align-self: center; }
-  .icon-btn.has { color: #e9a23b; }
-  .icon-btn .badge { position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; border-radius: 9px; padding: 0 4px;
-    background: #e9a23b; color: #1b1b21; font-size: 10.5px; font-weight: 800; display: none; place-items: center; }
-  .icon-btn.has .badge { display: grid; }
-  .dup-group { background: var(--row); border-radius: 12px; padding: 6px; margin-bottom: 10px; }
-  .dup-item { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
-  .dup-item input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
-  .dup-name { font-weight: 600; font-size: 15px; word-break: break-word; }
-  .dup-sub { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
-  .dup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 2px 2px; }
-  .dup-actions .btn { min-height: 40px; font-size: 14px; }
-  .empty-dup { text-align: center; color: var(--muted); padding: 30px 0 24px; font-size: 15px; }
-  .addr { width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
-    font: inherit; font-size: 16px; padding: 0 12px; outline: 0; }
-  .addr:focus { border-color: var(--accent); }
+    text-align: left; cursor: pointer; }
+  .menu-item:hover, .menu-item:active { background: var(--field); }
+  .menu-item > svg { color: var(--red); flex: none; }
+  .menu-item .mt { font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: -.1px; }
+  .menu-item .ms { font: 500 9.5px var(--mono); text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+  .menu-item .badge { position: static; margin-left: auto; }
+  .menu-item.has .badge { display: block; }
+  .menu-item[hidden] { display: none; }
+  .spin > svg { animation: spin 1s linear infinite; }
+
+  /* ---------- окна ---------- */
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: none; align-items: flex-end; justify-content: center; }
+  .sheet-bg.show { display: flex; }
+  @media (min-width: 820px) { .sheet-bg { align-items: center; } }
+  .sheet { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: var(--sheet); border-radius: 22px 22px 0 0;
+    padding: 10px 20px calc(env(safe-area-inset-bottom) + 20px); animation: up .22s ease; }
+  @media (min-width: 820px) { .sheet { border-radius: 22px; padding-bottom: 20px; border: 1.5px solid var(--ink); } }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+  .grip { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .sheet-head h2 { margin: 0; font-weight: 800; font-size: 24px; letter-spacing: -.04em; text-transform: uppercase; line-height: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .done { font: 700 11px var(--mono); text-transform: uppercase; color: var(--red); padding: 8px 0; flex: none; }
+  .field { margin-bottom: 18px; }
+  .label { font: 500 10px var(--mono); text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .hint { font: 500 10px/1.6 var(--mono); text-transform: uppercase; color: var(--muted); }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 16px; border-radius: 22px;
+    border: 1.5px solid var(--ink); font: 700 11.5px var(--mono); text-transform: uppercase; text-align: center; cursor: pointer; }
+  .btn.primary { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn:active { transform: scale(.98); }
+  .cats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .cats button { min-height: 40px; border-radius: 20px; border: 1.5px solid var(--line); font: 500 11px var(--mono); text-transform: uppercase; }
+  .cats button.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+  .pic { display: flex; gap: 12px; align-items: center; }
+  .pic .thumb { width: 64px; height: 64px; border-radius: 6px; }
+  .pic .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pic .btn { min-height: 38px; padding: 8px 14px; }
+  .text-view { white-space: pre-wrap; font-size: 18px; line-height: 1.6; word-break: break-word; min-height: 120px; }
+  .text-view.empty-text { font: 500 11px var(--mono); text-transform: uppercase; color: var(--muted); }
+  textarea { width: 100%; min-height: 50vh; border-radius: 12px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink);
+    font: 16px/1.5 var(--sans); padding: 12px; resize: vertical; outline: 0; }
+  textarea:focus { border-color: var(--ink); }
+  .addr { width: 100%; height: 44px; border-radius: 22px; border: 1.5px solid var(--ink); background: none; color: var(--ink);
+    font: 15px var(--mono); padding: 0 16px; outline: 0; }
   .sync-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .sync-tabs label { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 10px; background: var(--row); font-size: 15px; }
-  .sync-tabs input { width: 18px; height: 18px; accent-color: var(--accent); }
-  .sync-status { margin-top: 12px; font-size: 14px; color: var(--muted); white-space: pre-line; min-height: 20px; }
-  .sync-status .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
-  .sync-status .bar i { display: block; height: 100%; background: var(--accent); }
-  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 20px);
-    background: #2b2b34; color: #fff; padding: 12px 16px; border-radius: 14px; font-size: 14px; display: flex; gap: 14px;
-    align-items: center; opacity: 0; pointer-events: none; transition: .25s; z-index: 30; max-width: calc(100% - 32px);
-    box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .sync-tabs label { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 0 14px; border-radius: 21px;
+    border: 1.5px solid var(--line); font: 500 11px var(--mono); text-transform: uppercase; }
+  .sync-tabs input { width: 18px; height: 18px; accent-color: var(--red); }
+  .sync-status { margin-top: 14px; font: 500 10.5px/1.6 var(--mono); text-transform: uppercase; color: var(--muted); white-space: pre-line; min-height: 20px; }
+  .sync-status .bar { height: 3px; background: var(--line); margin: 8px 0 2px; }
+  .sync-status .bar i { display: block; height: 100%; background: var(--red); }
+  .dup-group { border: 1.5px solid var(--line); border-radius: 14px; padding: 4px; margin-bottom: 10px; }
+  .dup-item { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 10px; cursor: pointer; }
+  .dup-item input { width: 18px; height: 18px; accent-color: var(--red); flex: none; }
+  .dup-name { font-weight: 700; font-size: 14px; text-transform: uppercase; word-break: break-word; }
+  .dup-sub { font: 500 9.5px var(--mono); text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+  .dup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 6px 6px; }
+  .dup-actions .btn { min-height: 40px; }
+  .empty-dup { padding: 30px 0 24px; text-align: center; font: 500 11px var(--mono); text-transform: uppercase; color: var(--muted); }
+
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 92px); transform: translate(-50%, 20px);
+    background: var(--ink); color: var(--paper); padding: 12px 16px; border-radius: 14px; font-size: 14px; display: flex; gap: 14px;
+    align-items: center; opacity: 0; pointer-events: none; transition: .25s; z-index: 30; max-width: calc(100% - 32px); width: max-content;
+    box-shadow: 0 10px 30px rgba(0,0,0,.3); }
   .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-  .toast button { color: var(--accent); font-weight: 700; white-space: nowrap; }
+  .toast button { color: var(--red); font: 700 11px var(--mono); text-transform: uppercase; white-space: nowrap; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div class="app" id="app">
 
-  <section class="library">
-    <div class="lib-head">
-      <h1>Плеер</h1>
-      <div class="storage" id="storage"></div>
-      <button class="icon-btn" id="menuBtn" aria-label="Меню">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-        <span class="badge" id="menuBadge"></span>
-      </button>
+  <section class="library" id="library">
+    <div class="top">
+      <span>PLAYER</span>
+      <button class="burger" id="menuBtn" aria-label="Menu"><i></i><span class="badge" id="menuBadge"></span></button>
     </div>
-
-    <!-- меню «⋯» -->
-    <div class="menu-bg" id="menuBg">
-      <div class="menu" id="menu">
-        <label class="menu-item">
-          <input type="file" id="addInput" multiple accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          <div><div>Добавить файлы</div><div class="menu-sub" id="addSub">во вкладку «Музыка»</div></div>
-        </label>
-        <label class="menu-item">
-          <input type="file" id="openInput" accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
-          <div><div>Открыть без копирования</div><div class="menu-sub">для огромных видео: файл останется в «Файлах»</div></div>
-        </label>
-        <button class="menu-item" id="syncBtn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
-          <div><div>Синхронизация с Mac</div><div class="menu-sub" id="syncLabel">ещё ни разу</div></div>
-        </button>
-        <button class="menu-item" id="dupBtn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-          <div><div>Проверить дубли</div><div class="menu-sub" id="dupSub">найду одинаковые файлы</div></div>
-          <span class="badge" id="dupCount"></span>
-        </button>
-      </div>
-    </div>
-
-    <div class="install" id="install">
-      Чтобы плеер работал как приложение и не терял файлы: нажми <b>Поделиться</b> → <b>На экран «Домой»</b>.
-    </div>
-
+    <h1 class="giant" id="giant">Music</h1>
+    <div class="meta"><span id="meta"></span></div>
     <nav class="tabs" id="tabs"></nav>
-
-    <div class="search-row">
+    <div class="tools">
       <label class="search" id="searchBox">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input type="search" id="search" placeholder="Поиск" autocomplete="off" enterkeyhint="search">
-        <button class="clear" id="searchClear" type="button" aria-label="Очистить">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" id="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+        <button class="clear" id="searchClear" type="button" aria-label="Clear">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm3.5 12.1-1.4 1.4L12 13.4l-2.1 2.1-1.4-1.4 2.1-2.1-2.1-2.1 1.4-1.4 2.1 2.1 2.1-2.1 1.4 1.4-2.1 2.1z"/></svg>
         </button>
       </label>
-      <select class="sort" id="sort" aria-label="Сортировка">
-        <option value="rating-desc">★ ↓ Лучшие</option>
-        <option value="rating-asc">★ ↑ Худшие</option>
-        <option value="recent">Недавние</option>
-        <option value="az">А → Я</option>
-        <option value="za">Я → А</option>
-        <option value="random">🔀 Случайно</option>
+      <select class="sort" id="sort" aria-label="Sort">
+        <option value="rating-desc">★ ↓ Top</option>
+        <option value="rating-asc">★ ↑ Low</option>
+        <option value="recent">Recent</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+        <option value="random">Shuffle</option>
       </select>
     </div>
-
+    <div class="install" id="install">To keep your files and work offline, add the player to your Home Screen: <b>Share → Add to Home Screen</b>.</div>
     <ul class="list" id="list"></ul>
     <div class="empty" id="empty"></div>
   </section>
 
   <section class="player idle" id="player">
-    <div class="player-head">
-      <button class="back" id="back">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        Медиатека
-      </button>
-      <button class="more" id="playerMore" aria-label="Настройки дорожки">
+    <div class="np-top">
+      <button id="back">↓ Close</button>
+      <span id="npPos"></span>
+      <button id="playerMore" aria-label="More">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
     </div>
-
     <div class="stage" id="stage">
+      <div class="art-wrap"><div class="vinyl"></div><div class="cover" id="cover"></div></div>
       <video id="video" playsinline webkit-playsinline preload="metadata"></video>
-      <div class="cover" id="cover"></div>
-      <div class="placeholder">Выбери, что послушать или посмотреть</div>
+      <div class="placeholder">Pick something to play</div>
     </div>
     <audio id="audio" preload="metadata"></audio>
-
-    <div class="meta">
-      <div class="title" id="title"></div>
-      <div class="rate" id="rate"></div>
-    </div>
-
-    <div class="scrub">
-      <input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Перемотка">
+    <div class="np-body">
+      <h2 class="np-title" id="title"></h2>
+      <div class="np-sub"><span id="npTab"></span><div class="rate" id="rate"></div></div>
+      <div class="wave"><div class="bars" id="bars"></div><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek"></div>
       <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
-    </div>
-
-    <div class="controls">
-      <button class="skip" id="back15" aria-label="Назад на 15 секунд">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></svg>
-        <span>15</span>
-      </button>
-      <button class="play" id="play" aria-label="Играть">
-        <svg id="playIcon" width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
-      </button>
-      <button class="skip" id="fwd30" aria-label="Вперёд на 30 секунд">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
-        <span>30</span>
-      </button>
-    </div>
-
-    <div class="extras">
-      <button class="pill" id="speed">1×</button>
-      <button class="pill" id="textBtn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-        Текст<span class="dot" id="textDot" hidden></span>
-      </button>
-      <button class="pill video-only" id="fs">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
-        Во весь экран
-      </button>
-      <button class="pill video-only" id="pip">Картинка в картинке</button>
-    </div>
-  </section>
-</div>
-
-<!-- окно «Дорожка»: рейтинг, картинка, вкладка, текст, удаление -->
-<div class="sheet-bg" id="itemSheet">
-  <div class="sheet">
-    <div class="grip"></div>
-    <div class="sheet-head"><h2 id="isTitle"></h2><button class="done" data-close>Готово</button></div>
-    <div class="field">
-      <div class="label">Рейтинг</div>
-      <div class="rate" id="isRate" style="justify-content:flex-start"></div>
-    </div>
-    <div class="field">
-      <div class="label">Картинка</div>
-      <div class="pic">
-        <div class="thumb" id="isThumb"></div>
-        <div class="btns">
-          <label class="btn"><input type="file" id="coverInput" accept="image/*">Выбрать картинку</label>
-          <button class="btn danger" id="isCoverDel">Убрать</button>
-        </div>
+      <div class="controls">
+        <button class="ctl" id="prevBtn" aria-label="Previous"></button>
+        <button class="big" id="play" aria-label="Play"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
+        <button class="ctl" id="nextBtn" aria-label="Next"></button>
       </div>
     </div>
-    <div class="field">
-      <div class="label">Вкладка</div>
-      <div class="cats" id="isCats"></div>
-    </div>
-    <div class="field">
-      <div class="label">Текст</div>
-      <button class="btn" id="isText" style="width:100%"></button>
-    </div>
-    <button class="btn danger" id="isDelete" style="width:100%">Удалить</button>
+  </section>
+
+  <!-- мини-плеер внизу медиатеки (на телефоне) -->
+  <div class="mini" id="mini">
+    <div class="thumb" id="miniThumb"></div>
+    <div style="min-width:0"><div class="t" id="miniTitle"></div><div class="s" id="miniTime"></div></div>
+    <button class="ib" id="miniPrev" aria-label="Previous"></button>
+    <button class="pp" id="miniPlay" aria-label="Play"><svg id="miniIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
+    <button class="ib" id="miniNext" aria-label="Next"></button>
+  </div>
+</div>
+
+<!-- меню медиатеки «☰» -->
+<div class="menu-bg" id="menuBg">
+  <div class="menu" id="menu">
+    <label class="menu-item">
+      <input type="file" id="addInput" multiple accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <div><div class="mt">Add files</div><div class="ms" id="addSub">to Music</div></div>
+    </label>
+    <label class="menu-item">
+      <input type="file" id="openInput" accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+      <div><div class="mt">Open without copying</div><div class="ms">for huge videos · stays in Files</div></div>
+    </label>
+    <button class="menu-item" id="syncBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
+      <div><div class="mt">Sync with Mac</div><div class="ms" id="syncLabel">never synced</div></div>
+    </button>
+    <button class="menu-item" id="dupBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+      <div><div class="mt">Find duplicates</div><div class="ms" id="dupSub">same file twice</div></div>
+      <span class="badge" id="dupCount"></span>
+    </button>
+  </div>
+</div>
+
+<!-- меню плеера «⋯» -->
+<div class="menu-bg" id="pmBg">
+  <div class="menu" id="pm">
+    <button class="menu-item" id="pmSpeed">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 13l4-4"/><path d="M3.5 17a9 9 0 1 1 17 0"/></svg>
+      <div><div class="mt">Speed · <span id="speed">1×</span></div><div class="ms">tap to change</div></div>
+    </button>
+    <button class="menu-item" id="textBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <div><div class="mt">Lyrics &amp; notes</div><div class="ms" id="textSub">add text</div></div>
+    </button>
+    <button class="menu-item" id="pmTrack">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      <div><div class="mt">Track settings</div><div class="ms">rating · cover · tab · delete</div></div>
+    </button>
+    <button class="menu-item" id="fs" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      <div><div class="mt">Full screen</div></div>
+    </button>
+    <button class="menu-item" id="pip" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="8" height="7" rx="1" fill="currentColor"/></svg>
+      <div><div class="mt">Picture in picture</div></div>
+    </button>
   </div>
 </div>
 
@@ -391,10 +365,10 @@
 <div class="sheet-bg" id="dupSheet">
   <div class="sheet">
     <div class="grip"></div>
-    <div class="sheet-head"><h2>Дубли</h2><button class="done" data-close>Готово</button></div>
-    <p class="hint" style="margin:0 2px 12px">В каждой группе отмечен файл, который останется. Рейтинг, текст, картинка и место остановки перейдут на него.</p>
+    <div class="sheet-head"><h2>Duplicates</h2><button class="done" data-close>Done</button></div>
+    <p class="hint" style="margin:0 0 14px">In each group the checked file stays. Rating, notes, cover and position move to it.</p>
     <div id="dupList"></div>
-    <button class="btn danger" id="dupAll" style="width:100%">Убрать все дубли</button>
+    <button class="btn danger" id="dupAll" style="width:100%">Remove all duplicates</button>
   </div>
 </div>
 
@@ -402,19 +376,50 @@
 <div class="sheet-bg" id="syncSheet">
   <div class="sheet">
     <div class="grip"></div>
-    <div class="sheet-head"><h2>Синхронизация с Mac</h2><button class="done" data-close>Готово</button></div>
+    <div class="sheet-head"><h2>Sync with Mac</h2><button class="done" data-close>Done</button></div>
     <div class="field">
-      <div class="label">Адрес Mac в Tailscale</div>
+      <div class="label">Mac address in Tailscale</div>
       <input class="addr" id="syncAddr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
-             placeholder="https://имя-mac.xxxx.ts.net">
+             placeholder="https://your-mac.xxxx.ts.net">
     </div>
     <div class="field">
-      <div class="label">Что держать на этом устройстве</div>
+      <div class="label">Keep on this device</div>
       <div class="sync-tabs" id="syncTabs"></div>
-      <div class="hint" style="margin:6px 2px 0">Рейтинги, тексты, картинки и место остановки синхронизируются для всего, а файлы скачиваются только из отмеченных вкладок.</div>
+      <div class="hint" style="margin-top:8px">Ratings, notes, covers and positions sync for everything. Files download only from checked tabs.</div>
     </div>
-    <button class="btn primary" id="syncNow" style="width:100%">Синхронизировать</button>
+    <button class="btn primary" id="syncNow" style="width:100%">Sync now</button>
     <div class="sync-status" id="syncStatus"></div>
+  </div>
+</div>
+
+<!-- окно «Дорожка»: рейтинг, картинка, вкладка, текст, удаление -->
+<div class="sheet-bg" id="itemSheet">
+  <div class="sheet">
+    <div class="grip"></div>
+    <div class="sheet-head"><h2 id="isTitle"></h2><button class="done" data-close>Done</button></div>
+    <div class="field">
+      <div class="label">Rating</div>
+      <div class="rate" id="isRate"></div>
+    </div>
+    <div class="field">
+      <div class="label">Cover</div>
+      <div class="pic">
+        <div class="thumb" id="isThumb"></div>
+        <div class="btns">
+          <label class="btn"><input type="file" id="coverInput" accept="image/*">Choose image</label>
+          <button class="btn danger" id="isCoverDel">Remove</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <div class="label">Tab</div>
+      <div class="cats" id="isCats"></div>
+    </div>
+    <div class="field">
+      <div class="label">Lyrics &amp; notes</div>
+      <button class="btn" id="isText" style="width:100%"></button>
+    </div>
+    <button class="btn danger" id="isDelete" style="width:100%">Delete</button>
   </div>
 </div>
 
@@ -423,12 +428,12 @@
   <div class="sheet">
     <div class="grip"></div>
     <div class="sheet-head">
-      <button class="done" id="tsEdit" style="color:var(--text)">Изменить</button>
-      <h2 id="tsTitle"></h2>
-      <button class="done" id="tsDone">Готово</button>
+      <button class="done" id="tsEdit" style="color:var(--ink)">Edit</button>
+      <h2 id="tsTitle" style="font-size:18px"></h2>
+      <button class="done" id="tsDone">Done</button>
     </div>
     <div class="text-view" id="tsView"></div>
-    <textarea id="tsArea" placeholder="Вставь сюда текст песни, конспект, заметки…" hidden></textarea>
+    <textarea id="tsArea" placeholder="Paste lyrics, notes…" hidden></textarea>
   </div>
 </div>
 
@@ -468,11 +473,13 @@ const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), d
 
 // ---------- вкладки ----------
 const CATS = [
-  { id: 'music', name: 'Музыка', of: '«Музыке»', icon: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>' },
-  { id: 'audiobooks', name: 'Аудиокниги', of: '«Аудиокнигах»', icon: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v15H6.5A2.5 2.5 0 0 0 4 20.5 2.5 2.5 0 0 0 6.5 23H20"/>' },
-  { id: 'video', name: 'Видео', of: '«Видео»', icon: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8l-6 4 6 4z"/>' },
-  { id: 'movies', name: 'Фильмы', of: '«Фильмах»', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>' },
+  { id: 'music', name: 'Music', unit: ['track', 'tracks'], icon: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>' },
+  { id: 'audiobooks', name: 'Audiobooks', unit: ['file', 'files'], icon: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v15H6.5A2.5 2.5 0 0 0 4 20.5 2.5 2.5 0 0 0 6.5 23H20"/>' },
+  { id: 'video', name: 'Videos', unit: ['video', 'videos'], icon: '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8l-6 4 6 4z"/>' },
+  { id: 'movies', name: 'Movies', unit: ['movie', 'movies'], icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/>' },
 ];
+// вкладки на Mac — названия папок в ~/Медиатека
+const MAC_TABS = { 'Музыка': 'music', 'Аудиокниги': 'audiobooks', 'Видео': 'video', 'Фильмы': 'movies' };
 const catSvg = (c, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg>`;
 const catOf = m => m.category || (m.kind === 'video' ? 'video' : 'music');   // старые записи — по типу файла
 const catById = id => CATS.find(c => c.id === id) || CATS[0];
@@ -487,19 +494,27 @@ const kindOf = f => {
   return /\.(mp4|m4v|mov|webm|mkv)$/i.test(f.name) ? 'video' : 'audio';
 };
 const prettyName = n => n.replace(/\.[^.]+$/, '');
+const pad2 = n => String(n).padStart(2, '0');
 function fmtTime(s) {
   if (!isFinite(s) || s < 0) s = 0;
   s = Math.floor(s);
   const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
-  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+  return (h ? h + ':' + pad2(m) : m) + ':' + pad2(sec);
 }
 function fmtSize(b) {
   if (!b) return '';
-  const u = ['Б', 'КБ', 'МБ', 'ГБ']; let i = 0;
+  const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
   while (b >= 1024 && i < 3) { b /= 1024; i++; }
-  return (i ? b.toFixed(b < 10 ? 1 : 0) : b).toString().replace('.', ',') + ' ' + u[i];
+  return (i ? b.toFixed(b < 10 ? 1 : 0) : b) + ' ' + u[i];
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const plural = (n, [one, many]) => n + ' ' + (n === 1 ? one : many);
+// число от строки — чтобы обложка-заглушка и волна у трека были всегда одинаковые
+function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
+const GRADS = [['#ff3b24', '#7a0f05'], ['#2f4a3a', '#0d1712'], ['#9db7cf', '#3a5068'], ['#f0c060', '#9a5a10'],
+               ['#c9a0dc', '#4b2a63'], ['#3a3a3a', '#000000'], ['#e98a6b', '#6b2416'], ['#7fb3a1', '#1f4a3c']];
+const gradOf = id => { const [a, b] = GRADS[hash(id) % GRADS.length]; return `linear-gradient(135deg, ${a}, ${b})`; };
+
 let toastTimer;
 function toast(text, btnText, onBtn, ms = 4000) {
   $('toastText').textContent = text;
@@ -510,14 +525,19 @@ function toast(text, btnText, onBtn, ms = 4000) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $('toast').classList.remove('show'), ms);
 }
-const STAR = '<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
-const ICON_MORE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+const STAR = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
+const ICON_MORE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 const ICON_PLAY = '<path d="M8 5.5v13l11-6.5z"/>';
 const ICON_PAUSE = '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>';
+const ICON_PREV = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg>`;
+const ICON_NEXT = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM14.5 12 6 18V6z"/></svg>`;
+const ICON_BACK = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></svg>`;
+const ICON_FWD = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>`;
 
 // ---------- состояние ----------
 let items = [];          // описания файлов
 let current = null;      // что играет сейчас
+let queue = [];          // порядок треков вкладки, из которой запустили (для «предыдущий/следующий»)
 let el = null;           // активный элемент: audio или video
 let objectURL = null;
 let pendingReopen = null;
@@ -530,7 +550,7 @@ let speed = parseFloat(localStorage.getItem('speed')) || 1;
 let tab = localStorage.getItem('tab') || 'music';
 // старые названия сортировки → новые
 let sort = { rating: 'rating-desc', name: 'az' }[localStorage.getItem('sort')] || localStorage.getItem('sort') || 'rating-desc';
-let shuffle = new Map();   // для «Случайно»: порядок держится, пока не выберешь «Случайно» снова
+let shuffle = new Map();   // для «Shuffle»: порядок держится, пока не выберешь его снова
 let query = '';
 
 // ---------- картинки ----------
@@ -542,10 +562,11 @@ async function loadCovers() {
     }
   }
 }
-function thumbHTML(m, size = 22) {
+// обложка: своя картинка или цветная заглушка с иконкой вкладки
+function paintThumb(box, m, iconSize = 20) {
   const url = covers.get(m.id);
-  if (url) return `<img src="${url}" alt="">`;
-  return catSvg(catById(catOf(m)), size);
+  box.style.background = url ? '' : gradOf(m.id);
+  box.innerHTML = url ? `<img src="${url}" alt="">` : catSvg(catById(catOf(m)), iconSize);
 }
 // уменьшаем картинку до 800 px, чтобы не занимала много места
 async function shrinkImage(file) {
@@ -558,13 +579,30 @@ async function shrinkImage(file) {
 }
 
 // ---------- медиатека ----------
+// огромный заголовок вкладки — подгоняем размер под ширину колонки
+function fitGiant() {
+  const g = $('giant');
+  g.style.fontSize = '100px';
+  const free = g.clientWidth - 32;
+  const size = Math.max(36, Math.min(96, 100 * free / Math.max(1, g.scrollWidth - 32)));
+  g.style.fontSize = size + 'px';
+}
+function fitTitle() {
+  const t = $('title'), n = t.textContent.length;
+  t.style.fontSize = (n <= 10 ? 46 : n <= 18 ? 38 : n <= 30 ? 30 : 24) + 'px';
+}
+
 function renderTabs() {
   const counts = {};
   for (const m of items) counts[catOf(m)] = (counts[catOf(m)] || 0) + 1;
-  $('tabs').innerHTML = CATS.map(c => `<button class="tab${c.id === tab ? ' active' : ''}" data-tab="${c.id}">
-    ${catSvg(c, 20)}<span>${c.name}</span><span class="n">${counts[c.id] || 0}</span></button>`).join('');
-  $('search').placeholder = 'Поиск в ' + catById(tab).of;
-  $('addSub').textContent = 'во вкладку «' + catById(tab).name + '»';
+  const c = catById(tab);
+  $('tabs').innerHTML = CATS.map((x, i) =>
+    `<button class="tab${x.id === tab ? ' active' : ''}" data-tab="${x.id}">${pad2(i + 1)} ${x.name}</button>`).join('');
+  $('giant').textContent = c.name;
+  fitGiant();
+  $('meta').textContent = plural(counts[tab] || 0, c.unit);
+  $('search').placeholder = 'Search ' + c.name.toLowerCase();
+  $('addSub').textContent = 'to ' + c.name;
 }
 
 function visibleItems() {
@@ -572,7 +610,7 @@ function visibleItems() {
   const list = items.filter(m => catOf(m) === tab &&
     (!q || prettyName(m.name).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
   const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added);
-  const byName = (a, b) => prettyName(a.name).localeCompare(prettyName(b.name), 'ru', { numeric: true });
+  const byName = (a, b) => prettyName(a.name).localeCompare(prettyName(b.name), 'en', { numeric: true });
   const rnd = m => { if (!shuffle.has(m.id)) shuffle.set(m.id, Math.random()); return shuffle.get(m.id); };
   if (sort === 'rating-desc') list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || recent(a, b));
   else if (sort === 'rating-asc') list.sort((a, b) => (a.rating || 0) - (b.rating || 0) || recent(a, b));
@@ -594,29 +632,29 @@ async function refresh() {
   empty.style.display = shown.length ? 'none' : '';
   const c = catById(tab);
   empty.innerHTML = query
-    ? `Ничего не нашла в ${c.of} по запросу «${esc(query)}».`
-    : `${catSvg(c, 44)}В ${c.of} пока пусто.<br>Нажми «⋯» справа вверху → «Добавить файлы».`;
+    ? `Nothing in ${esc(c.name)} matches “${esc(query)}”.`
+    : `${esc(c.name)} is empty.<br>Open ☰ → Add files.`;
 
-  for (const m of shown) {
+  shown.forEach((m, i) => {
     const li = document.createElement('li');
-    li.className = 'item' + (current && current.id === m.id ? ' current' : '') + (m.busy ? ' busy' : '');
+    const isCur = current && current.id === m.id;
+    li.className = 'item' + (isCur ? ' current' : '') + (m.busy ? ' busy' : '');
     const res = resumable(m);
     const pct = res && m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0;
     const parts = [];
-    if (m.busy) parts.push('Копирую в плеер…');
+    if (m.busy) parts.push('Copying…');
     else {
-      if (m.rating) parts.push(`<span class="stars">${'★'.repeat(m.rating)}</span>`);
-      if (m.duration) parts.push(res && m.position > 1 && !m.done ? fmtTime(m.position) + ' из ' + fmtTime(m.duration) : fmtTime(m.duration));
-      if (res && m.done) parts.push(catOf(m) === 'audiobooks' ? 'прослушано' : 'просмотрено');
-      parts.push(fmtSize(m.size));
-      if (m.text) parts.push('текст');
-      if (!m.stored) parts.push('<span class="warn">в «Файлах»</span>');
+      if (m.duration) parts.push(res && m.position > 1 && !m.done ? fmtTime(m.position) + ' / ' + fmtTime(m.duration) : fmtTime(m.duration));
+      if (isCur) parts.push('<span class="red">playing</span>');
+      if (res && m.done) parts.push(catOf(m) === 'audiobooks' ? 'finished' : 'watched');
+      if (!m.stored) parts.push('<span class="red">in Files</span>');
     }
-    li.innerHTML = `<div class="thumb cat-${catOf(m)}">${thumbHTML(m)}</div>
-      <div><div class="name"></div><div class="sub">${parts.join('<span>·</span>')}</div></div>
-      <button class="more" aria-label="Настройки">${ICON_MORE}</button>
+    li.innerHTML = `<span class="no">${pad2(i + 1)}</span><div class="thumb"></div>
+      <div style="min-width:0"><div class="name"></div><div class="sub">${parts.join(' · ')}</div></div>
+      <button class="more" aria-label="Track settings">${ICON_MORE}</button>
       ${pct > 0 && !m.done ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}`;
     li.querySelector('.name').textContent = prettyName(m.name);
+    paintThumb(li.querySelector('.thumb'), m);
     li.onclick = e => {
       if (e.target.closest('.more')) return openItemSheet(m);
       if (!m.stored) {
@@ -625,30 +663,23 @@ async function refresh() {
         $('openInput').click();
         return;
       }
+      queue = shown.filter(x => x.stored).map(x => x.id);
       play(m);
     };
     list.appendChild(li);
-  }
+  });
   if (current) {
     const fresh = items.find(x => x.id === current.id);
     if (fresh) Object.assign(current, fresh);
     renderPlayerMeta();
   }
-  updateStorage();
-}
-
-async function updateStorage() {
-  if (!navigator.storage || !navigator.storage.estimate) return;
-  const { usage, quota } = await navigator.storage.estimate();
-  $('storage').textContent = usage ? fmtSize(usage) + (quota ? ' из ' + fmtSize(quota) : '') : '';
-  $('storage').title = 'Занято в плеере';
 }
 
 async function addFiles(files) {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   for (const f of files) {
     const id = fileId(f);
-    if (items.some(m => m.id === id && m.stored)) { toast('«' + prettyName(f.name) + '» уже есть'); continue; }
+    if (items.some(m => m.id === id && m.stored)) { toast('“' + prettyName(f.name) + '” is already here'); continue; }
     const old = items.find(m => m.id === id) || {};
     const m = { ...old, id, name: f.name, size: f.size, mime: f.type, kind: kindOf(f), added: old.added || Date.now(),
                 position: old.position || 0, duration: old.duration || 0, category: old.category || tab,
@@ -658,7 +689,7 @@ async function addFiles(files) {
       await putBlob(id, f);
       m.stored = true;
     } catch (e) {
-      toast('Не хватило места для «' + prettyName(f.name) + '». Открой его без копирования.', null, null, 6000);
+      toast('Not enough space for “' + prettyName(f.name) + '”. Open it without copying.', null, null, 6000);
     }
     m.busy = false;
     await putMeta(m); await refresh();
@@ -668,7 +699,7 @@ async function addFiles(files) {
 
 async function openOnce(f) {
   const id = fileId(f);
-  if (pendingReopen && pendingReopen.id !== id) toast('Это другой файл — начну его с начала');
+  if (pendingReopen && pendingReopen.id !== id) toast('That’s a different file — starting from the beginning');
   pendingReopen = null;
   let m = items.find(x => x.id === id);
   if (!m) {
@@ -676,11 +707,13 @@ async function openOnce(f) {
           stored: false, category: tab };
     await putMeta(m);
   }
+  queue = [];
   play(m, f);
 }
 
 async function remove(m) {
-  const what = m.stored ? 'Удалить «' + prettyName(m.name) + '» из плеера?' : 'Убрать «' + prettyName(m.name) + '» из списка? Сам файл останется в «Файлах».';
+  const what = m.stored ? 'Delete “' + prettyName(m.name) + '” from the player?'
+                        : 'Remove “' + prettyName(m.name) + '” from the list? The file stays in Files.';
   if (!confirm(what)) return false;
   if (current && current.id === m.id) stop();
   if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
@@ -711,7 +744,7 @@ async function update(m, fields) {
 
 // ---------- окно «Дорожка» ----------
 function rateButtons(box, m) {
-  box.innerHTML = [1, 2, 3, 4, 5].map(n => `<button data-n="${n}" class="${(m.rating || 0) >= n ? 'on' : ''}" aria-label="${n} из 5">${STAR}</button>`).join('');
+  box.innerHTML = [1, 2, 3, 4, 5].map(n => `<button data-n="${n}" class="${(m.rating || 0) >= n ? 'on' : ''}" aria-label="${n} of 5">${STAR}</button>`).join('');
   box.onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     const n = +b.dataset.n;
@@ -728,11 +761,10 @@ function renderItemSheet() {
   const m = sheetItem; if (!m) return;
   $('isTitle').textContent = prettyName(m.name);
   rateButtons($('isRate'), m);
-  $('isThumb').className = 'thumb cat-' + catOf(m);
-  $('isThumb').innerHTML = thumbHTML(m, 28);
+  paintThumb($('isThumb'), m, 26);
   $('isCoverDel').style.display = m.hasCover ? '' : 'none';
   $('isCats').innerHTML = CATS.map(c => `<button data-cat="${c.id}" class="${catOf(m) === c.id ? 'on' : ''}">${c.name}</button>`).join('');
-  $('isText').textContent = m.text ? 'Открыть текст' : 'Добавить текст';
+  $('isText').textContent = m.text ? 'Open text' : 'Add text';
 }
 $('isCats').onclick = e => {
   const b = e.target.closest('button'); if (!b || !sheetItem) return;
@@ -748,7 +780,7 @@ $('coverInput').onchange = async e => {
     await update(m, { hasCover: true });
     renderItemSheet();
     if (current && current.id === m.id) setupMediaSession(current);
-  } catch (err) { toast('Не получилось открыть картинку'); }
+  } catch (err) { toast('Couldn’t open that image'); }
 };
 $('isCoverDel').onclick = async () => {
   const m = sheetItem; if (!m) return;
@@ -775,7 +807,7 @@ function showText(editing) {
   $('tsEdit').style.visibility = editing ? 'hidden' : '';
   if (editing) { $('tsArea').value = m.text || ''; setTimeout(() => $('tsArea').focus(), 50); }
   else {
-    $('tsView').textContent = m.text || 'Текста пока нет.';
+    $('tsView').textContent = m.text || 'No text yet.';
     $('tsView').classList.toggle('empty-text', !m.text);
   }
 }
@@ -797,22 +829,68 @@ for (const bg of document.querySelectorAll('.sheet-bg')) {
   });
 }
 
+// ---------- меню ☰ и ⋯ ----------
+// открывается под кнопкой, закрывается тапом мимо или после выбора
+function openMenu(bgId, menuId, btn) {
+  const r = btn.getBoundingClientRect(), menu = $(menuId);
+  menu.style.top = (r.bottom + 8) + 'px';
+  menu.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+  $(bgId).classList.add('show');
+}
+function closeMenu() { $('menuBg').classList.remove('show'); $('pmBg').classList.remove('show'); }
+for (const id of ['menuBg', 'pmBg']) $(id).addEventListener('click', e => { if (e.target === $(id)) closeMenu(); });
+$('menuBtn').onclick = () => openMenu('menuBg', 'menu', $('menuBtn'));
+$('playerMore').onclick = () => {
+  if (!current) return;
+  $('fs').hidden = $('pip').hidden = current.kind !== 'video';
+  $('textSub').textContent = current.text ? 'open text' : 'add text';
+  openMenu('pmBg', 'pm', $('playerMore'));
+};
+
 // ---------- плеер ----------
 const audio = $('audio'), video = $('video');
+const BARS = 64;
+
+// волна: высоты столбиков зависят от трека, поэтому у каждого своя и всегда одинаковая
+function renderWave(m) {
+  let s = hash(m.id) || 1;
+  $('bars').innerHTML = Array.from({ length: BARS }, (_, i) => {
+    s = (s * 1103515245 + 12345) >>> 0;
+    const h = 20 + Math.abs(Math.sin(i * 0.37 + (s % 7))) * 55 + (s % 1000) / 1000 * 25;
+    return `<i style="height:${Math.min(100, h).toFixed(0)}%"></i>`;
+  }).join('');
+}
+function paintWave(frac) {
+  const cut = Math.round(frac * BARS);
+  [...$('bars').children].forEach((b, i) => b.classList.toggle('f', i >= cut));
+}
+
+function renderControls() {
+  const music = current && !resumable(current);
+  $('prevBtn').innerHTML = music ? ICON_PREV(28) : ICON_BACK(40) + '<span>15</span>';
+  $('nextBtn').innerHTML = music ? ICON_NEXT(28) : ICON_FWD(40) + '<span>30</span>';
+  $('miniPrev').innerHTML = music ? ICON_PREV(18) : ICON_BACK(22);
+  $('miniNext').innerHTML = music ? ICON_NEXT(18) : ICON_FWD(22);
+}
 
 function renderPlayerMeta() {
   if (!current) return;
   $('title').textContent = prettyName(current.name);
+  fitTitle();
   rateButtons($('rate'), current);
-  const url = covers.get(current.id);
-  $('cover').className = 'cover cat-' + catOf(current);
-  $('cover').innerHTML = url ? `<img src="${url}" alt="">` : catSvg(catById(catOf(current)), 120);
-  $('textDot').hidden = !current.text;
+  paintThumb($('cover'), current, 90);
+  paintThumb($('miniThumb'), current, 18);
+  $('miniTitle').textContent = prettyName(current.name);
+  const c = catById(catOf(current));
+  const pos = queue.indexOf(current.id);
+  $('npPos').textContent = c.name + (pos >= 0 ? ' · ' + pad2(pos + 1) + '/' + pad2(queue.length) : '');
+  $('npTab').textContent = c.name;
+  renderControls();
 }
 
 async function play(m, file) {
   const blob = file || (m.stored ? await getBlob(m.id) : null);
-  if (!blob) { toast('Файл не найден — добавь его заново'); return; }
+  if (!blob) { toast('File not found — add it again'); return; }
   stop(false);
   current = m;
   el = m.kind === 'video' ? video : audio;
@@ -821,9 +899,10 @@ async function play(m, file) {
   el.playbackRate = el.defaultPlaybackRate = speed;
 
   $('player').classList.remove('idle');
-  $('player').classList.toggle('is-video', m.kind === 'video');
   $('stage').classList.toggle('is-video', m.kind === 'video');
+  renderWave(m);
   renderPlayerMeta();
+  $('mini').classList.add('show');
   $('app').classList.add('show-player');
 
   el.addEventListener('loadedmetadata', () => {
@@ -831,7 +910,7 @@ async function play(m, file) {
     const pos = m.position || 0;
     if (resumable(m) && pos > 5 && pos < el.duration - 5 && !m.done) {
       el.currentTime = pos;
-      toast('Продолжаю с ' + fmtTime(pos), 'С начала', () => { el.currentTime = 0; });
+      toast('Resumed at ' + fmtTime(pos), 'Start over', () => { el.currentTime = 0; });
     }
     m.done = false;
     updateUI();
@@ -850,12 +929,28 @@ function stop(hide = true) {
   for (const x of [audio, video]) { x.pause(); x.removeAttribute('src'); x.load(); }
   if (objectURL) URL.revokeObjectURL(objectURL);
   objectURL = null; el = null;
-  if (hide) { current = null; $('player').classList.add('idle'); $('app').classList.remove('show-player'); }
+  if (hide) {
+    current = null;
+    $('player').classList.add('idle'); $('player').classList.remove('playing');
+    $('app').classList.remove('show-player'); $('mini').classList.remove('show');
+  }
 }
 
 // Видео, фильмы и аудиокниги продолжаются с места остановки (даже после полного закрытия плеера),
 // музыка всегда играет с начала — её место не запоминаем.
 function resumable(m) { return catOf(m) !== 'music'; }
+
+// музыка: предыдущий/следующий трек в порядке вкладки, из которой запустили
+function step(dir) {
+  if (!current) return;
+  const i = queue.indexOf(current.id);
+  const nextId = i >= 0 ? queue[i + dir] : null;
+  const m = nextId && items.find(x => x.id === nextId);
+  if (m) play(m);
+  else if (dir < 0 && el) { el.currentTime = 0; updateUI(); }
+}
+const prevAction = () => current && (resumable(current) ? skip(-15) : (el && el.currentTime > 3 ? (el.currentTime = 0, updateUI()) : step(-1)));
+const nextAction = () => current && (resumable(current) ? skip(30) : step(1));
 
 function savePosition(force) {
   if (!current || !el || !isFinite(el.currentTime) || !resumable(current)) return;
@@ -870,13 +965,18 @@ function savePosition(force) {
 function updateUI() {
   if (!el) return;
   const d = el.duration || 0, t = el.currentTime || 0;
+  const frac = d ? t / d : 0;
   if (!dragging) {
-    $('seek').value = d ? Math.round(t / d * 1000) : 0;
+    $('seek').value = Math.round(frac * 1000);
     $('cur').textContent = fmtTime(t);
     $('left').textContent = '−' + fmtTime(d - t);
+    paintWave(frac);
   }
-  $('seek').style.setProperty('--p', ($('seek').value / 10) + '%');
-  $('playIcon').innerHTML = el.paused ? ICON_PLAY : ICON_PAUSE;
+  $('miniTime').textContent = fmtTime(t) + ' / ' + fmtTime(d);
+  $('mini').style.setProperty('--p', (frac * 100).toFixed(1) + '%');
+  const icon = el.paused ? ICON_PLAY : ICON_PAUSE;
+  $('playIcon').innerHTML = icon; $('miniIcon').innerHTML = icon;
+  $('player').classList.toggle('playing', !el.paused);
   if ('mediaSession' in navigator && d && navigator.mediaSession.setPositionState) {
     try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(t, d), playbackRate: el.playbackRate }); } catch (e) {}
   }
@@ -888,12 +988,12 @@ for (const x of [audio, video]) {
   x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
   x.addEventListener('ended', () => {
     if (x !== el || !current) return;
-    if (!resumable(current)) { updateUI(); return; }   // песня доиграла — отмечать нечего
+    if (!resumable(current)) { updateUI(); step(1); return; }   // песня доиграла — следующая
     current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
   });
   x.addEventListener('error', () => {
     if (x !== el) return;
-    toast('Этот формат iPhone не открывает. Видео лучше скачивать в mp4.', null, null, 6000);
+    toast('iPhone can’t play this format. Download videos as mp4.', null, null, 6000);
   });
 }
 
@@ -917,11 +1017,14 @@ function setupMediaSession(m) {
     artwork: art ? [{ src: art, sizes: '800x800', type: 'image/jpeg' }]
                  : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
   });
+  const music = !resumable(m);
   const h = {
     play: () => el && el.play(),
     pause: () => el && el.pause(),
-    seekbackward: d => skip(-(d.seekOffset || 15)),
-    seekforward: d => skip(d.seekOffset || 30),
+    seekbackward: music ? null : d => skip(-(d.seekOffset || 15)),
+    seekforward: music ? null : d => skip(d.seekOffset || 30),
+    previoustrack: music ? () => step(-1) : null,
+    nexttrack: music ? () => step(1) : null,
     seekto: d => { if (el) { el.currentTime = d.seekTime; updateUI(); } },
   };
   for (const [k, fn] of Object.entries(h)) { try { ms.setActionHandler(k, fn); } catch (e) {} }
@@ -943,32 +1046,28 @@ $('searchClear').onclick = e => { e.preventDefault(); $('search').value = ''; qu
 $('sort').value = sort;
 $('sort').onchange = () => {
   sort = $('sort').value;
-  if (sort === 'random') shuffle = new Map();   // каждый выбор «Случайно» — новый порядок
+  if (sort === 'random') shuffle = new Map();   // каждый выбор «Shuffle» — новый порядок
   localStorage.setItem('sort', sort);
   refresh();
 };
 
-// меню «⋯»: открывается под кнопкой, закрывается тапом мимо или после выбора
-function closeMenu() { $('menuBg').classList.remove('show'); }
-$('menuBtn').onclick = () => {
-  const r = $('menuBtn').getBoundingClientRect();
-  const menu = $('menu');
-  menu.style.top = (r.bottom + 8) + 'px';
-  menu.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
-  $('menuBg').classList.add('show');
-};
-$('menuBg').addEventListener('click', e => { if (e.target === $('menuBg')) closeMenu(); });
 // выбор файлов: меню закрываем чуть позже, чтобы iOS успела открыть окно выбора
 for (const id of ['addInput', 'openInput']) $(id).addEventListener('click', () => setTimeout(closeMenu, 400));
-
 $('addInput').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[0]); else pendingReopen = null; e.target.value = ''; };
+
 $('play').onclick = togglePlay;
-$('back15').onclick = () => skip(-15);
-$('fwd30').onclick = () => skip(30);
+$('prevBtn').onclick = prevAction;
+$('nextBtn').onclick = nextAction;
 $('back').onclick = () => $('app').classList.remove('show-player');
-$('playerMore').onclick = () => current && openItemSheet(current);
-$('textBtn').onclick = () => current && openTextSheet(current);
+$('mini').onclick = e => {
+  if (e.target.closest('#miniPlay')) return togglePlay();
+  if (e.target.closest('#miniPrev')) return prevAction();
+  if (e.target.closest('#miniNext')) return nextAction();
+  $('app').classList.add('show-player');
+};
+$('textBtn').onclick = () => { closeMenu(); current && openTextSheet(current); };
+$('pmTrack').onclick = () => { closeMenu(); current && openItemSheet(current); };
 video.onclick = togglePlay;
 
 $('seek').addEventListener('input', () => {
@@ -977,38 +1076,42 @@ $('seek').addEventListener('input', () => {
   const t = $('seek').value / 1000 * (el.duration || 0);
   $('cur').textContent = fmtTime(t);
   $('left').textContent = '−' + fmtTime((el.duration || 0) - t);
-  $('seek').style.setProperty('--p', ($('seek').value / 10) + '%');
+  paintWave($('seek').value / 1000);
 });
 $('seek').addEventListener('change', () => {
   dragging = false;
-  if (el) { el.currentTime = $('seek').value / 1000 * (el.duration || 0); savePosition(true); }
+  if (el) { el.currentTime = $('seek').value / 1000 * (el.duration || 0); savePosition(true); updateUI(); }
 });
 
-function showSpeed() { $('speed').textContent = (speed + '').replace('.', ',') + '×'; }
-$('speed').onclick = () => {
+function showSpeed() { $('speed').textContent = speed + '×'; }
+$('pmSpeed').onclick = () => {   // меню не закрываем — можно нажать несколько раз подряд
   speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
   localStorage.setItem('speed', speed);
   if (el) el.playbackRate = el.defaultPlaybackRate = speed;
   showSpeed();
 };
 $('fs').onclick = () => {
+  closeMenu();
   if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
   else if (video.requestFullscreen) video.requestFullscreen();
 };
 $('pip').onclick = () => {
+  closeMenu();
   if (document.pictureInPictureElement) document.exitPictureInPicture();
-  else if (video.requestPictureInPicture) video.requestPictureInPicture().catch(() => toast('Здесь «картинка в картинке» недоступна'));
+  else if (video.requestPictureInPicture) video.requestPictureInPicture().catch(() => toast('Picture in picture isn’t available here'));
   else if (video.webkitSetPresentationMode) video.webkitSetPresentationMode('picture-in-picture');
 };
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-  if (e.code === 'ArrowLeft') skip(-15);
-  if (e.code === 'ArrowRight') skip(30);
+  if (e.code === 'ArrowLeft') prevAction();
+  if (e.code === 'ArrowRight') nextAction();
 });
 document.addEventListener('visibilitychange', () => document.hidden && savePosition(true));
 window.addEventListener('pagehide', () => savePosition(true));
+window.addEventListener('resize', fitGiant);
+if (document.fonts) document.fonts.ready.then(fitGiant);
 
 // подсказка «установи на экран Домой» — только на iPhone/iPad в обычном Safari
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -1030,12 +1133,12 @@ if ('serviceWorker' in navigator) {
 }
 
 showSpeed();
-// если плеер закрыли посреди копирования — снимаем «Копирую…»
+// если плеер закрыли посреди копирования — снимаем «Copying…»
 openDB().then(async () => {
   for (const m of await getAllMeta()) if (m.busy) { m.busy = false; await putMeta(m); }
   await refresh();
   checkDuplicates(true);
-}).catch(() => toast('Не удалось открыть хранилище браузера', null, null, 8000));
+}).catch(() => toast('Couldn’t open the browser storage', null, null, 8000));
 
 // ---------- дубли ----------
 // Дубль — одна и та же вещь в плеере дважды: точная копия файла (тот же размер) или тот же трек
@@ -1071,9 +1174,9 @@ async function probeDuration(m) {
 }
 
 // какой оставить: копию с Mac (синхронизация её всё равно держит), потом то, что внутри плеера,
-// потом с рейтингом/текстом/картинкой, потом самый большой файл (лучше качество)
+// потом с рейтингом/текстом/картинкой, потом без «(1)»/«копия», потом самый большой файл (лучше качество)
 function keepScore(m) {
-  const isCopyName = /([(\[]\s*(\d+|копия|copy)\s*[)\]]|[\s_-](\d|копия|copy))$/i.test(prettyName(m.name));   // «(1)», «- копия»
+  const isCopyName = /([(\[]\s*(\d+|копия|copy)\s*[)\]]|[\s_-](\d|копия|copy))$/i.test(prettyName(m.name));
   return (m.id.startsWith('mac:') ? 8 : 0) + (m.stored ? 4 : 0) + (m.rating || m.text || m.hasCover ? 2 : 0) + (isCopyName ? 0 : 1);
 }
 
@@ -1140,7 +1243,7 @@ async function mergeInto(keep, others) {
 function updateDupBtn() {
   $('dupBtn').classList.toggle('has', dupGroups.length > 0);
   $('dupCount').textContent = dupGroups.length || '';
-  $('dupSub').textContent = dupGroups.length ? 'нашла групп: ' + dupGroups.length : 'найду одинаковые файлы';
+  $('dupSub').textContent = dupGroups.length ? plural(dupGroups.length, ['group', 'groups']) + ' found' : 'same file twice';
   $('menuBtn').classList.toggle('has', dupGroups.length > 0);
   $('menuBadge').textContent = dupGroups.length || '';
 }
@@ -1149,22 +1252,22 @@ async function checkDuplicates(auto = false) {
   dupGroups = await findDuplicates();
   updateDupBtn();
   if (!auto) openDupSheet();
-  else if (dupGroups.length) toast(`Нашла дубли: ${dupGroups.length}`, 'Посмотреть', openDupSheet, 8000);
+  else if (dupGroups.length) toast('Found duplicates: ' + dupGroups.length, 'Review', openDupSheet, 8000);
 }
 
 function openDupSheet() {
-  const src = m => m.id.startsWith('mac:') ? 'копия с Mac' : m.stored ? 'в плеере' : 'в «Файлах»';
+  const src = m => m.id.startsWith('mac:') ? 'from Mac' : m.stored ? 'in player' : 'in Files';
   $('dupList').innerHTML = !dupGroups.length
-    ? '<div class="empty-dup">Дублей нет 👍</div>'
+    ? '<div class="empty-dup">No duplicates 👍</div>'
     : dupGroups.map((g, gi) => `<div class="dup-group" data-g="${gi}">
         ${g.items.map((m, i) => `<label class="dup-item"><input type="radio" name="keep${gi}" value="${i}" ${i ? '' : 'checked'}>
           <div><div class="dup-name">${esc(prettyName(m.name))}</div>
           <div class="dup-sub">${catById(catOf(m)).name} · ${src(m)} · ${fmtSize(m.size)}${m.duration ? ' · ' + fmtTime(m.duration) : ''}${m.rating ? ' · ' + '★'.repeat(m.rating) : ''}</div></div></label>`).join('')}
-        <div class="dup-actions"><button class="btn primary" data-act="clean">Оставить отмеченный</button><button class="btn" data-act="ignore">Это не дубли</button></div>
+        <div class="dup-actions"><button class="btn primary" data-act="clean">Keep checked</button><button class="btn" data-act="ignore">Not duplicates</button></div>
       </div>`).join('');
   const extra = dupGroups.reduce((s, g) => s + g.items.length - 1, 0);
   $('dupAll').style.display = dupGroups.length > 1 ? '' : 'none';
-  $('dupAll').textContent = `Убрать все дубли (${extra})`;
+  $('dupAll').textContent = `Remove all duplicates (${extra})`;
   $('dupSheet').classList.add('show');
 }
 
@@ -1184,12 +1287,12 @@ $('dupList').onclick = async e => {
   updateDupBtn(); openDupSheet(); await refresh();
 };
 $('dupAll').onclick = async () => {
-  if (!confirm('Убрать все лишние копии? Рейтинги, тексты и места остановки перейдут на оставшиеся.')) return;
+  if (!confirm('Remove all extra copies? Ratings, notes and positions move to the copies that stay.')) return;
   const choice = dupGroups.map((g, gi) => +($('dupList').querySelector(`[data-g="${gi}"] input:checked`)?.value || 0));
   for (const [gi, g] of dupGroups.entries()) await mergeInto(g.items[choice[gi]], g.items.filter((_, i) => i !== choice[gi]));
   dupGroups = await findDuplicates();
   updateDupBtn(); openDupSheet(); await refresh();
-  toast('Дубли убраны');
+  toast('Duplicates removed');
 };
 $('dupBtn').onclick = () => { closeMenu(); checkDuplicates(false); };
 
@@ -1202,11 +1305,11 @@ const syncAddr = () => (localStorage.getItem('syncAddr') || '').trim().replace(/
 
 function ago(t) {
   const d = Math.floor((Date.now() - t) / 86400000);
-  return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d + ' дн. назад';
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
 }
 function updateSyncLabel() {
   const last = +localStorage.getItem('lastSync');
-  $('syncLabel').textContent = last ? 'последняя — ' + ago(last) : 'ещё ни разу';
+  $('syncLabel').textContent = last ? 'last sync · ' + ago(last) : 'never synced';
 }
 function renderSyncSheet() {
   $('syncAddr').value = localStorage.getItem('syncAddr') || '';
@@ -1214,8 +1317,8 @@ function renderSyncSheet() {
     `<label><input type="checkbox" data-tab="${c.id}" ${syncTabs.includes(c.id) ? 'checked' : ''}>${c.name}</label>`).join('');
   const last = +localStorage.getItem('lastSync');
   if (!syncing) $('syncStatus').textContent = last
-    ? 'Последняя синхронизация: ' + new Date(last).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
-    : 'Ещё ни разу не синхронизировалось.';
+    ? 'Last sync: ' + new Date(last).toLocaleString('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    : 'Never synced yet.';
 }
 $('syncBtn').onclick = () => { closeMenu(); renderSyncSheet(); $('syncSheet').classList.add('show'); };
 $('syncAddr').addEventListener('change', () => localStorage.setItem('syncAddr', $('syncAddr').value.trim()));
@@ -1223,14 +1326,14 @@ $('syncTabs').onchange = () => {
   syncTabs = [...$('syncTabs').querySelectorAll('input:checked')].map(i => i.dataset.tab);
   localStorage.setItem('syncTabs', JSON.stringify(syncTabs));
 };
-// одна кнопка: «Синхронизировать», а пока идёт синхронизация — «Остановить»
+// одна кнопка: «Sync now», а пока идёт синхронизация — «Stop»
 $('syncNow').onclick = () => {
   if (syncing) { syncAbort && syncAbort.abort(); return; }
   localStorage.setItem('syncAddr', $('syncAddr').value.trim());
   sync();
 };
 let syncAbort = null;
-const stopIfAborted = () => { if (syncAbort && syncAbort.signal.aborted) throw new DOMException('остановлено', 'AbortError'); };
+const stopIfAborted = () => { if (syncAbort && syncAbort.signal.aborted) throw new DOMException('stopped', 'AbortError'); };
 
 function syncStatus(text, frac) {
   $('syncStatus').innerHTML = esc(text) + (frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : '');
@@ -1265,25 +1368,24 @@ async function sync() {
   if (syncing) return;
   if (!/^https?:\/\//.test(syncAddr())) {
     renderSyncSheet(); $('syncSheet').classList.add('show');
-    syncStatus('Впиши адрес Mac из Tailscale, например https://имя-mac.xxxx.ts.net');
+    syncStatus('Enter your Mac’s Tailscale address, e.g. https://your-mac.xxxx.ts.net');
     return;
   }
   syncing = true;
   syncAbort = new AbortController();
   syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
   $('syncBtn').classList.add('spin');
-  $('syncNow').textContent = 'Остановить'; $('syncNow').classList.remove('primary'); $('syncNow').classList.add('danger');
+  $('syncNow').textContent = 'Stop'; $('syncNow').classList.remove('primary'); $('syncNow').classList.add('danger');
   let added = 0, changed = 0, removed = 0;
   try {
-    syncStatus('Подключаюсь к Mac…');
+    syncStatus('Connecting to Mac…');
     const { items: remoteRaw } = await api('/api/index');
     // на Mac вкладки — названия папок, в плеере — свои id
-    const TAB_IDS = Object.fromEntries(CATS.map(c => [c.name, c.id]));
-    const remote = remoteRaw.map(r => ({ ...r, tab: TAB_IDS[r.tab] || r.tab }));
+    const remote = remoteRaw.map(r => ({ ...r, tab: MAC_TABS[r.tab] || r.tab }));
     items = await getAllMeta();
 
     // 1. рейтинги, вкладки, тексты, картинки, позиции — в обе стороны, по каждому полю побеждает более свежее
-    syncStatus('Свожу рейтинги, тексты и места остановки…');
+    syncStatus('Merging ratings, notes and positions…');
     const payload = {};
     for (const m of items) {
       if (!m.ts) continue;
@@ -1334,7 +1436,7 @@ async function sync() {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
     for (const [i, r] of missing.entries()) {
       stopIfAborted();
-      const paint = () => syncStatus(`Скачиваю ${i + 1} из ${missing.length}: ${r.title}\n${fmtSize(got)} из ${fmtSize(total)}`,
+      const paint = () => syncStatus(`Downloading ${i + 1} of ${missing.length}: ${r.title}\n${fmtSize(got)} of ${fmtSize(total)}`,
                                      total ? got / total : null);
       paint();
       const url = syncAddr() + '/files/' + r.copy.split('/').map(encodeURIComponent).join('/');
@@ -1351,7 +1453,7 @@ async function sync() {
       try {
         await putBlob(r.id, blob);
       } catch (e) {
-        throw new Error('На устройстве закончилось место. Сними галочки с больших вкладок (например, «Фильмы») и синхронизируй снова.');
+        throw new Error('This device is out of space. Uncheck big tabs (like Movies) and sync again.');
       }
       await applyMeta(m);
       await putMeta(m);
@@ -1372,26 +1474,26 @@ async function sync() {
 
     localStorage.setItem('lastSync', Date.now());
     const parts = [];
-    if (added) parts.push('новых файлов: ' + added);
-    if (changed) parts.push('обновлено: ' + changed);
-    if (removed) parts.push('убрано с устройства: ' + removed);
-    syncStatus('Готово. ' + (parts.join(' · ') || 'Всё и так было одинаково.'));
-    toast('Синхронизировано' + (parts.length ? ': ' + parts.join(' · ') : ''));
+    if (added) parts.push('new files: ' + added);
+    if (changed) parts.push('updated: ' + changed);
+    if (removed) parts.push('removed from device: ' + removed);
+    syncStatus('Done. ' + (parts.join(' · ') || 'Already up to date.'));
+    toast('Synced' + (parts.length ? ': ' + parts.join(' · ') : ''));
     setTimeout(() => checkDuplicates(true), 4500);   // после подсказки о синхронизации — проверка дублей
   } catch (e) {
     if (e.name === 'AbortError' || syncAbort.signal.aborted) {
-      syncStatus('Синхронизация остановлена.' + (added ? ` Уже скачанное (${added}) осталось на устройстве.` : '')
-        + ' Нажми «Синхронизировать», чтобы продолжить.');
+      syncStatus('Sync stopped.' + (added ? ` What’s already downloaded (${added}) stays on this device.` : '')
+        + ' Tap Sync now to continue.');
     } else {
       const offline = e.name === 'TypeError' || /^HTTP/.test(e.message);
-      syncStatus('Не получилось. ' + (offline
-        ? 'Mac не отвечает: проверь, что он включён, на нём запущена «Медиатека», а в Tailscale на этом устройстве включён переключатель.'
+      syncStatus('Couldn’t sync. ' + (offline
+        ? 'The Mac isn’t responding: make sure it’s on, Mediateka is running, and Tailscale is switched on on this device.'
         : e.message));
     }
   } finally {
     syncing = false;
     $('syncBtn').classList.remove('spin');
-    $('syncNow').textContent = 'Синхронизировать'; $('syncNow').classList.add('primary'); $('syncNow').classList.remove('danger');
+    $('syncNow').textContent = 'Sync now'; $('syncNow').classList.add('primary'); $('syncNow').classList.remove('danger');
     await refresh();
     updateSyncLabel();
   }
