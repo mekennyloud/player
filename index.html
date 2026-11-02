@@ -64,10 +64,10 @@
   .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 16px; }
   .search .clear { display: none; color: var(--faint); }
   .search.has .clear { display: block; }
-  .sort { height: 42px; padding: 0 10px; border-radius: 12px; background: var(--panel); color: var(--text);
+  .search { min-width: 0; }
+  .sort { flex: none; max-width: 40%; height: 42px; padding: 0 10px; border-radius: 12px; background: var(--panel); color: var(--text);
     border: 0; font: inherit; font-size: 14px; font-weight: 600; -webkit-appearance: none; appearance: none; text-align: center; }
 
-  .add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .btn { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px;
     padding: 10px 12px; border-radius: 12px; background: var(--row); font-weight: 600; font-size: 15px;
     text-align: center; cursor: pointer; user-select: none; -webkit-user-select: none; }
@@ -186,7 +186,20 @@
 
   .sync-btn { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 16px; background: var(--panel);
     color: var(--accent); font-size: 13px; font-weight: 600; flex: none; }
-  .sync-btn.spin svg { animation: spin 1s linear infinite; }
+  .spin svg { animation: spin 1s linear infinite; }
+  .menu-bg { position: fixed; inset: 0; z-index: 15; display: none; }
+  .menu-bg.show { display: block; }
+  .menu { position: fixed; width: min(300px, calc(100vw - 24px)); background: var(--panel); border-radius: 16px; padding: 6px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45); border: 1px solid var(--line); animation: pop .15s ease; }
+  @keyframes pop { from { transform: scale(.96); opacity: 0; } }
+  .menu-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; border-radius: 10px;
+    text-align: left; font-size: 15.5px; font-weight: 500; cursor: pointer; }
+  .menu-item:active, .menu-item:hover { background: var(--row); }
+  .menu-item > svg { color: var(--accent); flex: none; }
+  .menu-sub { font-size: 12.5px; color: var(--muted); font-weight: 400; margin-top: 1px; }
+  .menu-item .badge { position: static; margin-left: auto; display: none; }
+  .menu-item.has .badge { display: grid; }
+  #menuBtn.has { color: #e9a23b; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .lib-head .storage { flex: 1; min-width: 0; text-align: right; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .icon-btn { position: relative; width: 36px; height: 30px; display: grid; place-items: center; border-radius: 16px;
@@ -227,14 +240,35 @@
     <div class="lib-head">
       <h1>Плеер</h1>
       <div class="storage" id="storage"></div>
-      <button class="sync-btn" id="syncBtn" aria-label="Синхронизация с Mac">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
-        <span id="syncLabel">Mac</span>
+      <button class="icon-btn" id="menuBtn" aria-label="Меню">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+        <span class="badge" id="menuBadge"></span>
       </button>
-      <button class="icon-btn" id="dupBtn" aria-label="Проверить дубли">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-        <span class="badge" id="dupCount"></span>
-      </button>
+    </div>
+
+    <!-- меню «⋯» -->
+    <div class="menu-bg" id="menuBg">
+      <div class="menu" id="menu">
+        <label class="menu-item">
+          <input type="file" id="addInput" multiple accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          <div><div>Добавить файлы</div><div class="menu-sub" id="addSub">во вкладку «Музыка»</div></div>
+        </label>
+        <label class="menu-item">
+          <input type="file" id="openInput" accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7M21 3l-9 9"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+          <div><div>Открыть без копирования</div><div class="menu-sub">для огромных видео: файл останется в «Файлах»</div></div>
+        </label>
+        <button class="menu-item" id="syncBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
+          <div><div>Синхронизация с Mac</div><div class="menu-sub" id="syncLabel">ещё ни разу</div></div>
+        </button>
+        <button class="menu-item" id="dupBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          <div><div>Проверить дубли</div><div class="menu-sub" id="dupSub">найду одинаковые файлы</div></div>
+          <span class="badge" id="dupCount"></span>
+        </button>
+      </div>
     </div>
 
     <div class="install" id="install">
@@ -252,24 +286,14 @@
         </button>
       </label>
       <select class="sort" id="sort" aria-label="Сортировка">
-        <option value="rating">★ Рейтинг</option>
+        <option value="rating-desc">★ ↓ Лучшие</option>
+        <option value="rating-asc">★ ↑ Худшие</option>
         <option value="recent">Недавние</option>
-        <option value="name">А–Я</option>
+        <option value="az">А → Я</option>
+        <option value="za">Я → А</option>
+        <option value="random">🔀 Случайно</option>
       </select>
     </div>
-
-    <div class="add-row">
-      <label class="btn primary">
-        <input type="file" id="addInput" multiple accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span id="addLabel">Добавить</span>
-      </label>
-      <label class="btn">
-        <input type="file" id="openInput" accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.mp4,.m4v,.mov">
-        Открыть без копирования
-      </label>
-    </div>
-    <p class="hint">«Добавить» кладёт файл внутрь плеера, в текущую вкладку. «Открыть без копирования» — для огромных видео: файл останется в «Файлах», а место остановки я запомню.</p>
 
     <ul class="list" id="list"></ul>
     <div class="empty" id="empty"></div>
@@ -504,7 +528,9 @@ const covers = new Map(); // id → адрес картинки
 const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 let speed = parseFloat(localStorage.getItem('speed')) || 1;
 let tab = localStorage.getItem('tab') || 'music';
-let sort = localStorage.getItem('sort') || 'rating';
+// старые названия сортировки → новые
+let sort = { rating: 'rating-desc', name: 'az' }[localStorage.getItem('sort')] || localStorage.getItem('sort') || 'rating-desc';
+let shuffle = new Map();   // для «Случайно»: порядок держится, пока не выберешь «Случайно» снова
 let query = '';
 
 // ---------- картинки ----------
@@ -538,6 +564,7 @@ function renderTabs() {
   $('tabs').innerHTML = CATS.map(c => `<button class="tab${c.id === tab ? ' active' : ''}" data-tab="${c.id}">
     ${catSvg(c, 20)}<span>${c.name}</span><span class="n">${counts[c.id] || 0}</span></button>`).join('');
   $('search').placeholder = 'Поиск в ' + catById(tab).of;
+  $('addSub').textContent = 'во вкладку «' + catById(tab).name + '»';
 }
 
 function visibleItems() {
@@ -545,8 +572,13 @@ function visibleItems() {
   const list = items.filter(m => catOf(m) === tab &&
     (!q || prettyName(m.name).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
   const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added);
-  if (sort === 'rating') list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || recent(a, b));
-  else if (sort === 'name') list.sort((a, b) => prettyName(a.name).localeCompare(prettyName(b.name), 'ru', { numeric: true }));
+  const byName = (a, b) => prettyName(a.name).localeCompare(prettyName(b.name), 'ru', { numeric: true });
+  const rnd = m => { if (!shuffle.has(m.id)) shuffle.set(m.id, Math.random()); return shuffle.get(m.id); };
+  if (sort === 'rating-desc') list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || recent(a, b));
+  else if (sort === 'rating-asc') list.sort((a, b) => (a.rating || 0) - (b.rating || 0) || recent(a, b));
+  else if (sort === 'az') list.sort(byName);
+  else if (sort === 'za') list.sort((a, b) => byName(b, a));
+  else if (sort === 'random') list.sort((a, b) => rnd(a) - rnd(b));
   else list.sort(recent);
   return list;
 }
@@ -563,7 +595,7 @@ async function refresh() {
   const c = catById(tab);
   empty.innerHTML = query
     ? `Ничего не нашла в ${c.of} по запросу «${esc(query)}».`
-    : `${catSvg(c, 44)}В ${c.of} пока пусто.<br>Нажми «Добавить» и выбери файлы.`;
+    : `${catSvg(c, 44)}В ${c.of} пока пусто.<br>Нажми «⋯» справа вверху → «Добавить файлы».`;
 
   for (const m of shown) {
     const li = document.createElement('li');
@@ -753,8 +785,7 @@ $('tsDone').onclick = async () => {
 };
 
 function closeSheets() {
-  $('itemSheet').classList.remove('show');
-  $('textSheet').classList.remove('show');
+  for (const bg of document.querySelectorAll('.sheet-bg')) bg.classList.remove('show');
 }
 for (const bg of document.querySelectorAll('.sheet-bg')) {
   bg.addEventListener('click', e => {
@@ -904,7 +935,25 @@ $('search').addEventListener('input', () => {
 });
 $('searchClear').onclick = e => { e.preventDefault(); $('search').value = ''; query = ''; $('searchBox').classList.remove('has'); refresh(); };
 $('sort').value = sort;
-$('sort').onchange = () => { sort = $('sort').value; localStorage.setItem('sort', sort); refresh(); };
+$('sort').onchange = () => {
+  sort = $('sort').value;
+  if (sort === 'random') shuffle = new Map();   // каждый выбор «Случайно» — новый порядок
+  localStorage.setItem('sort', sort);
+  refresh();
+};
+
+// меню «⋯»: открывается под кнопкой, закрывается тапом мимо или после выбора
+function closeMenu() { $('menuBg').classList.remove('show'); }
+$('menuBtn').onclick = () => {
+  const r = $('menuBtn').getBoundingClientRect();
+  const menu = $('menu');
+  menu.style.top = (r.bottom + 8) + 'px';
+  menu.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+  $('menuBg').classList.add('show');
+};
+$('menuBg').addEventListener('click', e => { if (e.target === $('menuBg')) closeMenu(); });
+// выбор файлов: меню закрываем чуть позже, чтобы iOS успела открыть окно выбора
+for (const id of ['addInput', 'openInput']) $(id).addEventListener('click', () => setTimeout(closeMenu, 400));
 
 $('addInput').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[0]); else pendingReopen = null; e.target.value = ''; };
@@ -1085,6 +1134,9 @@ async function mergeInto(keep, others) {
 function updateDupBtn() {
   $('dupBtn').classList.toggle('has', dupGroups.length > 0);
   $('dupCount').textContent = dupGroups.length || '';
+  $('dupSub').textContent = dupGroups.length ? 'нашла групп: ' + dupGroups.length : 'найду одинаковые файлы';
+  $('menuBtn').classList.toggle('has', dupGroups.length > 0);
+  $('menuBadge').textContent = dupGroups.length || '';
 }
 
 async function checkDuplicates(auto = false) {
@@ -1133,7 +1185,7 @@ $('dupAll').onclick = async () => {
   updateDupBtn(); openDupSheet(); await refresh();
   toast('Дубли убраны');
 };
-$('dupBtn').onclick = () => checkDuplicates(false);
+$('dupBtn').onclick = () => { closeMenu(); checkDuplicates(false); };
 
 // ---------- синхронизация с Mac ----------
 // На Mac работает «Медиатека» (через Tailscale): облегчённые копии файлов и общие рейтинги/тексты/позиции.
@@ -1148,7 +1200,7 @@ function ago(t) {
 }
 function updateSyncLabel() {
   const last = +localStorage.getItem('lastSync');
-  $('syncLabel').textContent = last ? ago(last) : 'Mac';
+  $('syncLabel').textContent = last ? 'последняя — ' + ago(last) : 'ещё ни разу';
 }
 function renderSyncSheet() {
   $('syncAddr').value = localStorage.getItem('syncAddr') || '';
@@ -1159,7 +1211,7 @@ function renderSyncSheet() {
     ? 'Последняя синхронизация: ' + new Date(last).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
     : 'Ещё ни разу не синхронизировалось.';
 }
-$('syncBtn').onclick = () => { renderSyncSheet(); $('syncSheet').classList.add('show'); };
+$('syncBtn').onclick = () => { closeMenu(); renderSyncSheet(); $('syncSheet').classList.add('show'); };
 $('syncAddr').addEventListener('change', () => localStorage.setItem('syncAddr', $('syncAddr').value.trim()));
 $('syncTabs').onchange = () => {
   syncTabs = [...$('syncTabs').querySelectorAll('input:checked')].map(i => i.dataset.tab);
