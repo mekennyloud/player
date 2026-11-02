@@ -120,9 +120,23 @@
   }
   .np-top { display: flex; justify-content: space-between; align-items: center; padding: 4px 20px 0; min-height: 36px; font: 500 11px var(--mono); text-transform: uppercase; }
   .np-top button { font: 500 11px var(--mono); text-transform: uppercase; padding: 6px 0; }
-  @media (min-width: 820px) { #back { visibility: hidden; } }
+  #libToggle { display: none; }
+  @media (min-width: 820px) {
+    #back { display: none; }
+    #libToggle { display: block; }
+    /* медиатеку на iPad можно спрятать — плеер на весь экран */
+    .app.lib-hidden { grid-template-columns: 1fr; }
+    .app.lib-hidden .library { display: none; }
+  }
+  /* содержимое плеера: на телефоне во всю ширину, на iPad — колонкой по центру */
+  .np-inner { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 560px; margin: 0 auto; }
   .stage { position: relative; margin: 22px 20px 0; flex: none; }
   .art-wrap { position: relative; width: min(100%, 300px); aspect-ratio: 1; margin-right: auto; }
+  @media (min-width: 820px) {
+    .art-wrap { width: min(100%, 44vh, 380px); margin: 0 auto; }
+    .np-title, .np-sub { text-align: center; justify-content: center; }
+    .np-sub { gap: 18px; }
+  }
   .vinyl { position: absolute; right: -15%; top: 4%; width: 92%; aspect-ratio: 1; border-radius: 50%;
     background: radial-gradient(circle, var(--red) 0 17%, #111 17.5% 19%, transparent 19%), repeating-radial-gradient(circle, #151515 0 2px, #232323 2px 3px);
     animation: spin 6s linear infinite; animation-play-state: paused; transition: right .4s ease; }
@@ -150,14 +164,17 @@
   .rate button { width: 26px; height: 28px; display: grid; place-items: center; color: var(--line); }
   .rate button.on { color: var(--red); }
   .wave { position: relative; height: 48px; margin: 20px 20px 0; }
-  .bars { position: absolute; inset: 0; display: flex; align-items: center; gap: 2px; pointer-events: none; }
-  .bars i { flex: 1; background: var(--ink); border-radius: 1px; }
+  /* тонкие столбики фиксированной ширины; сколько их — считается по ширине волны */
+  .bars { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+  .bars i { flex: 0 0 3px; background: var(--ink); border-radius: 1.5px; }
   .bars i.f { background: var(--line); }
   .wave input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
   .times { display: flex; justify-content: space-between; padding: 6px 20px 0; font: 500 11px var(--mono); }
-  .controls { display: flex; justify-content: center; align-items: center; gap: 40px; padding: 22px 20px 0; }
-  .ctl { width: 54px; height: 54px; display: grid; place-items: center; position: relative; color: var(--ink); }
-  .ctl span { position: absolute; font: 700 9.5px var(--mono); top: 21px; }
+  .np-body { flex: 1; display: flex; flex-direction: column; }
+  /* кнопки прижаты к низу экрана */
+  .controls { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding: 28px 18px 8px; }
+  .ctl { width: 52px; height: 52px; display: grid; place-items: center; position: relative; color: var(--ink); }
+  .ctl span { position: absolute; font: 700 9px var(--mono); top: 20px; }
   .big { width: 78px; height: 78px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center;
     box-shadow: 0 10px 24px color-mix(in srgb, var(--red) 35%, transparent); }
   .big:active, .mini .pp:active { transform: scale(.96); }
@@ -276,26 +293,32 @@
   <section class="player idle" id="player">
     <div class="np-top">
       <button id="back">↓ Close</button>
+      <button id="libToggle" aria-label="Show or hide library">⇤ Library</button>
       <span id="npPos"></span>
       <button id="playerMore" aria-label="More">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
     </div>
-    <div class="stage" id="stage">
-      <div class="art-wrap"><div class="vinyl"></div><div class="cover" id="cover"></div></div>
-      <video id="video" playsinline webkit-playsinline preload="metadata"></video>
-      <div class="placeholder">Pick something to play</div>
-    </div>
-    <audio id="audio" preload="metadata"></audio>
-    <div class="np-body">
-      <h2 class="np-title" id="title"></h2>
-      <div class="np-sub"><span id="npTab"></span><div class="rate" id="rate"></div></div>
-      <div class="wave"><div class="bars" id="bars"></div><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek"></div>
-      <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
-      <div class="controls">
-        <button class="ctl" id="prevBtn" aria-label="Previous"></button>
-        <button class="big" id="play" aria-label="Play"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
-        <button class="ctl" id="nextBtn" aria-label="Next"></button>
+    <div class="np-inner">
+      <div class="stage" id="stage">
+        <div class="art-wrap"><div class="vinyl"></div><div class="cover" id="cover"></div></div>
+        <video id="video" playsinline webkit-playsinline preload="metadata"></video>
+        <div class="placeholder">Pick something to play</div>
+      </div>
+      <audio id="audio" preload="metadata"></audio>
+      <div class="np-body">
+        <h2 class="np-title" id="title"></h2>
+        <div class="np-sub"><span id="npTab"></span><div class="rate" id="rate"></div></div>
+        <div class="wave"><div class="bars" id="bars"></div><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek"></div>
+        <div class="times"><span id="cur">0:00</span><span id="left">−0:00</span></div>
+        <!-- кнопки — внизу экрана: −10 · предыдущий · играть · следующий · +10 -->
+        <div class="controls">
+          <button class="ctl" id="back10" aria-label="Back 10 seconds"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v5h5"/></svg><span>10</span></button>
+          <button class="ctl" id="prevBtn" aria-label="Previous"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
+          <button class="big" id="play" aria-label="Play"><svg id="playIcon" width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
+          <button class="ctl" id="nextBtn" aria-label="Next"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM14.5 12 6 18V6z"/></svg></button>
+          <button class="ctl" id="fwd10" aria-label="Forward 10 seconds"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg><span>10</span></button>
+        </div>
       </div>
     </div>
   </section>
@@ -304,9 +327,9 @@
   <div class="mini" id="mini">
     <div class="thumb" id="miniThumb"></div>
     <div style="min-width:0"><div class="t" id="miniTitle"></div><div class="s" id="miniTime"></div></div>
-    <button class="ib" id="miniPrev" aria-label="Previous"></button>
+    <button class="ib" id="miniPrev" aria-label="Previous"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
     <button class="pp" id="miniPlay" aria-label="Play"><svg id="miniIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
-    <button class="ib" id="miniNext" aria-label="Next"></button>
+    <button class="ib" id="miniNext" aria-label="Next"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM14.5 12 6 18V6z"/></svg></button>
   </div>
 </div>
 
@@ -849,28 +872,21 @@ $('playerMore').onclick = () => {
 
 // ---------- плеер ----------
 const audio = $('audio'), video = $('video');
-const BARS = 64;
-
-// волна: высоты столбиков зависят от трека, поэтому у каждого своя и всегда одинаковая
+// волна: высоты столбиков зависят от трека, поэтому у каждого своя и всегда одинаковая;
+// столбики тонкие (3 px через 3 px), их число — по ширине волны
 function renderWave(m) {
+  const n = Math.max(30, Math.floor(($('bars').clientWidth || 330) / 6));
   let s = hash(m.id) || 1;
-  $('bars').innerHTML = Array.from({ length: BARS }, (_, i) => {
+  $('bars').innerHTML = Array.from({ length: n }, (_, i) => {
     s = (s * 1103515245 + 12345) >>> 0;
     const h = 20 + Math.abs(Math.sin(i * 0.37 + (s % 7))) * 55 + (s % 1000) / 1000 * 25;
     return `<i style="height:${Math.min(100, h).toFixed(0)}%"></i>`;
   }).join('');
+  if (el && el.duration) paintWave(el.currentTime / el.duration);
 }
 function paintWave(frac) {
-  const cut = Math.round(frac * BARS);
-  [...$('bars').children].forEach((b, i) => b.classList.toggle('f', i >= cut));
-}
-
-function renderControls() {
-  const music = current && !resumable(current);
-  $('prevBtn').innerHTML = music ? ICON_PREV(28) : ICON_BACK(40) + '<span>15</span>';
-  $('nextBtn').innerHTML = music ? ICON_NEXT(28) : ICON_FWD(40) + '<span>30</span>';
-  $('miniPrev').innerHTML = music ? ICON_PREV(18) : ICON_BACK(22);
-  $('miniNext').innerHTML = music ? ICON_NEXT(18) : ICON_FWD(22);
+  const bars = $('bars').children, cut = Math.round(frac * bars.length);
+  for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('f', i >= cut);
 }
 
 function renderPlayerMeta() {
@@ -885,7 +901,6 @@ function renderPlayerMeta() {
   const pos = queue.indexOf(current.id);
   $('npPos').textContent = c.name + (pos >= 0 ? ' · ' + pad2(pos + 1) + '/' + pad2(queue.length) : '');
   $('npTab').textContent = c.name;
-  renderControls();
 }
 
 async function play(m, file) {
@@ -940,7 +955,7 @@ function stop(hide = true) {
 // музыка всегда играет с начала — её место не запоминаем.
 function resumable(m) { return catOf(m) !== 'music'; }
 
-// музыка: предыдущий/следующий трек в порядке вкладки, из которой запустили
+// предыдущий/следующий файл в порядке вкладки, из которой запустили
 function step(dir) {
   if (!current) return;
   const i = queue.indexOf(current.id);
@@ -949,8 +964,9 @@ function step(dir) {
   if (m) play(m);
   else if (dir < 0 && el) { el.currentTime = 0; updateUI(); }
 }
-const prevAction = () => current && (resumable(current) ? skip(-15) : (el && el.currentTime > 3 ? (el.currentTime = 0, updateUI()) : step(-1)));
-const nextAction = () => current && (resumable(current) ? skip(30) : step(1));
+// «предыдущий»: если трек играет дольше 3 секунд — сначала в его начало (как в обычных плеерах)
+const prevAction = () => current && (el && el.currentTime > 3 ? (el.currentTime = 0, updateUI()) : step(-1));
+const nextAction = () => current && step(1);
 
 function savePosition(force) {
   if (!current || !el || !isFinite(el.currentTime) || !resumable(current)) return;
@@ -990,6 +1006,7 @@ for (const x of [audio, video]) {
     if (x !== el || !current) return;
     if (!resumable(current)) { updateUI(); step(1); return; }   // песня доиграла — следующая
     current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
+    if (catOf(current) === 'audiobooks') step(1);               // глава аудиокниги закончилась — следующая
   });
   x.addEventListener('error', () => {
     if (x !== el) return;
@@ -1017,14 +1034,13 @@ function setupMediaSession(m) {
     artwork: art ? [{ src: art, sizes: '800x800', type: 'image/jpeg' }]
                  : [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }]
   });
-  const music = !resumable(m);
   const h = {
     play: () => el && el.play(),
     pause: () => el && el.pause(),
-    seekbackward: music ? null : d => skip(-(d.seekOffset || 15)),
-    seekforward: music ? null : d => skip(d.seekOffset || 30),
-    previoustrack: music ? () => step(-1) : null,
-    nexttrack: music ? () => step(1) : null,
+    seekbackward: d => skip(-(d.seekOffset || 10)),
+    seekforward: d => skip(d.seekOffset || 10),
+    previoustrack: prevAction,
+    nexttrack: nextAction,
     seekto: d => { if (el) { el.currentTime = d.seekTime; updateUI(); } },
   };
   for (const [k, fn] of Object.entries(h)) { try { ms.setActionHandler(k, fn); } catch (e) {} }
@@ -1059,7 +1075,19 @@ $('openInput').onchange = e => { if (e.target.files[0]) openOnce(e.target.files[
 $('play').onclick = togglePlay;
 $('prevBtn').onclick = prevAction;
 $('nextBtn').onclick = nextAction;
+$('back10').onclick = () => skip(-10);
+$('fwd10').onclick = () => skip(10);
 $('back').onclick = () => $('app').classList.remove('show-player');
+// iPad: спрятать/показать медиатеку (запоминаем)
+function applyLibHidden(hidden) {
+  $('app').classList.toggle('lib-hidden', hidden);
+  $('libToggle').textContent = hidden ? '⇥ Library' : '⇤ Library';
+  localStorage.setItem('libHidden', hidden ? '1' : '');
+  if (current) setTimeout(() => renderWave(current), 50);   // ширина волны поменялась
+  else fitGiant();
+}
+$('libToggle').onclick = () => applyLibHidden(!$('app').classList.contains('lib-hidden'));
+applyLibHidden(!!localStorage.getItem('libHidden'));
 $('mini').onclick = e => {
   if (e.target.closest('#miniPlay')) return togglePlay();
   if (e.target.closest('#miniPrev')) return prevAction();
@@ -1105,12 +1133,12 @@ $('pip').onclick = () => {
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-  if (e.code === 'ArrowLeft') prevAction();
-  if (e.code === 'ArrowRight') nextAction();
+  if (e.code === 'ArrowLeft') skip(-10);
+  if (e.code === 'ArrowRight') skip(10);
 });
 document.addEventListener('visibilitychange', () => document.hidden && savePosition(true));
 window.addEventListener('pagehide', () => savePosition(true));
-window.addEventListener('resize', fitGiant);
+window.addEventListener('resize', () => { fitGiant(); if (current) renderWave(current); });
 if (document.fonts) document.fonts.ready.then(fitGiant);
 
 // подсказка «установи на экран Домой» — только на iPhone/iPad в обычном Safari
