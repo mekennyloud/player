@@ -559,7 +559,20 @@ const putMeta = m => idb('meta', 'readwrite', s => s.put(m));
 const getBlob = id => idb('blobs', 'readonly', s => s.get(id));
 const putBlob = (id, b) => idb('blobs', 'readwrite', s => s.put(b, id));
 const delBlob = id => idb('blobs', 'readwrite', s => s.delete(id));
-const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), delBlob(id), delBlob('cover:' + id)]);
+// большие файлы с Mac лежат кусками: id + \0 + поколение + \0 + номер. Так скачивание не держит весь файл в памяти,
+// а новая версия пишется рядом и заменяет старую только целиком скачанной
+const PART = '\u0000';
+const partKey = (id, gen, i) => id + PART + gen + PART + String(i).padStart(5, '0');
+const partRange = (id, gen) => IDBKeyRange.bound(id + PART + (gen ? gen + PART : ''), id + PART + (gen ? gen + PART : '') + '\uffff');
+const delParts = (id, gen) => idb('blobs', 'readwrite', s => s.delete(partRange(id, gen)));
+const delMedia = id => Promise.all([delBlob(id), delParts(id)]);
+// сам файл дорожки — целиком или собранный из кусков
+async function getMedia(m) {
+  if (!m.parts) return getBlob(m.id);
+  const parts = await idb('blobs', 'readonly', s => s.getAll(partRange(m.id, m.parts.gen)));
+  return parts.length === m.parts.n ? new Blob(parts, { type: m.mime || '' }) : null;
+}
+const delAll = id => Promise.all([idb('meta', 'readwrite', s => s.delete(id)), delMedia(id), delBlob('cover:' + id)]);
 
 // ---------- вкладки ----------
 const CATS = [
@@ -799,8 +812,9 @@ async function addFiles(files) {
   for (const f of files) {
     const id = fileId(f);
     if (items.some(m => m.id === id && m.stored)) { toast('“' + prettyName(f.name) + '” is already here'); continue; }
-    const twin = items.find(m => m.stored && m.size === f.size && m.kind === kindOf(f));   // тот же файл под другим именем
-    if (twin) { toast('Already here as “' + titleOf(twin) + '”'); continue; }
+    // тот же файл под другим именем (совпадает не только размер, но и содержимое)
+    const twin = items.find(m => m.stored && m.size === f.size && m.kind === kindOf(f));
+    if (twin && await sameBytes(f, await getMedia(twin).catch(() => null))) { toast('Already here as “' + titleOf(twin) + '”'); continue; }
     const old = items.find(m => m.id === id) || {};
     const m = { ...old, id, name: f.name, size: f.size, mime: f.type, kind: kindOf(f), added: old.added || Date.now(),
                 position: old.position || 0, duration: old.duration || 0, category: old.category || tab,
@@ -835,11 +849,11 @@ async function openOnce(f) {
 // убрать файл с Mac с этого устройства: место освобождается, в списке он остаётся с ☁ (рейтинг и место — тоже)
 async function offload(m) {
   if (current && current.id === m.id) stop();
-  await delBlob(m.id);
+  await delMedia(m.id);
   const fresh = await idb('meta', 'readonly', s => s.get(m.id)) || m;
-  Object.assign(fresh, { stored: false });
+  Object.assign(fresh, { stored: false }); delete fresh.parts;
   await putMeta(fresh);
-  m.stored = false;
+  m.stored = false; delete m.parts;
 }
 
 async function remove(m) {
@@ -1051,7 +1065,7 @@ function renderPlayerMeta() {
 }
 
 async function play(m, file) {
-  const blob = file || (m.stored ? await getBlob(m.id) : null);
+  const blob = file || (m.stored ? await getMedia(m) : null);
   if (!blob) { toast('File not found — add it again'); return; }
   stop(false);
   current = m;
@@ -1361,9 +1375,34 @@ function normTitle(name) {
     .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
+// один ли это файл на самом деле: размер, начало и конец (по 64 КБ) совпадают
+async function sameBytes(a, b) {
+  if (!a || !b || a.size !== b.size) return false;
+  const k = Math.min(65536, a.size);
+  const eq = async (x, y) => {
+    const [u, v] = (await Promise.all([x.arrayBuffer(), y.arrayBuffer()])).map(buf => new Uint8Array(buf));
+    return u.length === v.length && u.every((c, i) => c === v[i]);
+  };
+  return await eq(a.slice(0, k), b.slice(0, k)) && await eq(a.slice(a.size - k), b.slice(b.size - k));
+}
+// внутри группы похожих — наборы байт-в-байт одинаковых файлов (порядок группы сохраняется: первый — кого оставить)
+async function exactSets(g) {
+  const sets = [];
+  for (const m of g.items) {
+    if (!m.stored || !m.size) continue;
+    const blob = await getMedia(m).catch(() => null);
+    if (!blob) continue;
+    const set = sets.find(x => x.blob.size === blob.size) && await (async () => {
+      for (const x of sets) if (await sameBytes(x.blob, blob)) return x;
+    })();
+    if (set) set.items.push(m); else sets.push({ blob, items: [m] });
+  }
+  return sets.filter(x => x.items.length > 1).map(x => x.items);
+}
+
 // длительность файла, если плеер её ещё не знает
 async function probeDuration(m) {
-  const blob = m.stored ? await getBlob(m.id).catch(() => null) : null;
+  const blob = m.stored ? await getMedia(m).catch(() => null) : null;
   if (!blob) return 0;
   return new Promise(res => {
     const el = document.createElement(m.kind === 'video' ? 'video' : 'audio');
@@ -1457,12 +1496,13 @@ async function checkDuplicates(auto = false) {
   dupGroups = await findDuplicates();
   if (auto) {
     // точные копии (байт в байт тот же размер) сливаем без вопросов, похожие — показываем
-    const exact = dupGroups.filter(g => g.items.every(m => m.size && m.size === g.items[0].size));
-    for (const g of exact) await mergeInto(g.items[0], g.items.slice(1));
+    const exact = [];
+    for (const g of dupGroups) exact.push(...await exactSets(g));
+    for (const set of exact) await mergeInto(set[0], set.slice(1));
     if (exact.length) {
       dupGroups = await findDuplicates();
       await refresh();
-      if (!dupGroups.length) toast('Removed exact copies: ' + exact.reduce((n, g) => n + g.items.length - 1, 0));
+      if (!dupGroups.length) toast('Removed exact copies: ' + exact.reduce((n, set) => n + set.length - 1, 0));
     }
   }
   updateDupBtn();
@@ -1580,6 +1620,40 @@ async function download(url, onBytes) {
   return new Blob(chunks, { type: r.headers.get('Content-Type') || '' });
 }
 
+// скачать файл с Mac прямо в хранилище: маленький — целиком, большой — кусками по 32 МБ
+const CHUNK = 32 * 1024 * 1024;
+async function downloadToDB(url, id, size, onBytes) {
+  if (size <= CHUNK) {
+    const blob = await download(url, onBytes);
+    await putBlob(id, blob);
+    return { type: blob.type, parts: null };
+  }
+  const gen = Date.now().toString(36);
+  let type = '', n = 0;
+  try {
+    for (let start = 0; start < size; start += CHUNK, n++) {
+      const end = Math.min(size, start + CHUNK) - 1;
+      const r = await fetch(url, { headers: { Range: `bytes=${start}-${end}` }, cache: 'no-store', signal: syncAbort && syncAbort.signal });
+      if (r.status !== 206) throw new Error('HTTP ' + r.status);
+      type = r.headers.get('Content-Type') || type;
+      const blob = await r.blob();
+      if (blob.size !== end - start + 1) throw new Error('HTTP short');
+      await putBlob(partKey(id, gen, n), blob);
+      onBytes(blob.size);
+    }
+  } catch (e) {
+    await delParts(id, gen).catch(() => {});   // недокачанное не оставляем
+    throw e;
+  }
+  return { type, parts: { gen, n } };
+}
+// после удачной загрузки убираем прошлую версию файла
+async function dropOldMedia(id, oldParts, got) {
+  if (got.parts) await delBlob(id);
+  if (oldParts && (!got.parts || oldParts.gen !== got.parts.gen)) await delParts(id, oldParts.gen);
+}
+const isQuota = e => e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+
 async function sync() {
   if (syncing) return;
   if (!/^https?:\/\//.test(syncAddr())) {
@@ -1673,16 +1747,20 @@ async function sync() {
                                      total ? got / total : null);
       paint();
       const url = syncAddr() + '/files/' + r.copy.split('/').map(encodeURIComponent).join('/');
-      const blob = await download(url, n => {
-        got += n;
-        if (Date.now() - lastPaint > 300) { lastPaint = Date.now(); paint(); }
-      });
-      const m = { ...macMeta(r, items.find(x => x.id === r.id) || {}, blob.type), stored: true };
+      const old = items.find(x => x.id === r.id) || {};
+      let res;
       try {
-        await putBlob(r.id, blob);
+        res = await downloadToDB(url, r.id, r.size, n => {
+          got += n;
+          if (Date.now() - lastPaint > 300) { lastPaint = Date.now(); paint(); }
+        });
       } catch (e) {
+        if (!isQuota(e)) throw e;
         throw new Error('This device is out of space. Free some up in ☰ → Storage, or mark big files “Mac only”, and sync again.');
       }
+      await dropOldMedia(r.id, old.parts, res);
+      const m = { ...macMeta(r, old, res.type), stored: true };
+      if (res.parts) m.parts = res.parts; else delete m.parts;
       await applyMeta(m);
       await putMeta(m);
       added++;
@@ -1722,6 +1800,7 @@ async function sync() {
     }
   } finally {
     syncing = false;
+    syncAbort = null;   // иначе после «Stop» не скачивались бы и файлы с ☁
     $('syncBtn').classList.remove('spin');
     $('syncNow').textContent = 'Sync now'; $('syncNow').classList.add('primary'); $('syncNow').classList.remove('danger');
     await refresh();
@@ -1744,18 +1823,19 @@ async function downloadOne(m) {
     if (!r) throw new Error('gone');
     let got = 0, last = 0;
     const url = syncAddr() + '/files/' + r.copy.split('/').map(encodeURIComponent).join('/');
-    const blob = await download(url, n => {
+    const res = await downloadToDB(url, m.id, r.size, n => {
       got += n;
       if (Date.now() - last > 400 && sub()) { last = Date.now(); sub().textContent = `Downloading… ${Math.round(got / r.size * 100)}% of ${fmtSize(r.size)}`; }
     });
-    await putBlob(m.id, blob);
     const fresh = await idb('meta', 'readonly', s => s.get(m.id)) || m;
-    Object.assign(fresh, { stored: true, size: r.size, macMtime: r.mtime, mime: blob.type });
+    await dropOldMedia(m.id, fresh.parts, res);
+    Object.assign(fresh, { stored: true, size: r.size, macMtime: r.mtime, mime: res.type });
+    if (res.parts) fresh.parts = res.parts; else delete fresh.parts;
     await putMeta(fresh);
     toast('Downloaded “' + titleOf(m) + '”');
   } catch (e) {
     toast(e.message === 'gone' ? 'It’s no longer on your Mac'
-      : e.name === 'QuotaExceededError' ? 'Not enough space — free some up in ☰ → Storage'
+      : isQuota(e) ? 'Not enough space — free some up in ☰ → Storage'
       : 'Couldn’t reach your Mac. Is Mediateka running?', null, null, 6000);
   } finally {
     downloading = null;
