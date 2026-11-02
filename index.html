@@ -184,6 +184,20 @@
     font: inherit; font-size: 16px; line-height: 1.5; padding: 12px; resize: vertical; outline: 0; }
   textarea:focus { border-color: var(--accent); }
 
+  .sync-btn { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 16px; background: var(--panel);
+    color: var(--accent); font-size: 13px; font-weight: 600; flex: none; }
+  .sync-btn.spin svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .lib-head .storage { flex: 1; text-align: right; }
+  .addr { width: 100%; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    font: inherit; font-size: 16px; padding: 0 12px; outline: 0; }
+  .addr:focus { border-color: var(--accent); }
+  .sync-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .sync-tabs label { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 10px; background: var(--row); font-size: 15px; }
+  .sync-tabs input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .sync-status { margin-top: 12px; font-size: 14px; color: var(--muted); white-space: pre-line; min-height: 20px; }
+  .sync-status .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
+  .sync-status .bar i { display: block; height: 100%; background: var(--accent); }
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translate(-50%, 20px);
     background: #2b2b34; color: #fff; padding: 12px 16px; border-radius: 14px; font-size: 14px; display: flex; gap: 14px;
     align-items: center; opacity: 0; pointer-events: none; transition: .25s; z-index: 30; max-width: calc(100% - 32px);
@@ -199,6 +213,10 @@
     <div class="lib-head">
       <h1>Плеер</h1>
       <div class="storage" id="storage"></div>
+      <button class="sync-btn" id="syncBtn" aria-label="Синхронизация с Mac">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
+        <span id="syncLabel">Mac</span>
+      </button>
     </div>
 
     <div class="install" id="install">
@@ -324,6 +342,26 @@
       <button class="btn" id="isText" style="width:100%"></button>
     </div>
     <button class="btn danger" id="isDelete" style="width:100%">Удалить</button>
+  </div>
+</div>
+
+<!-- окно «Синхронизация с Mac» -->
+<div class="sheet-bg" id="syncSheet">
+  <div class="sheet">
+    <div class="grip"></div>
+    <div class="sheet-head"><h2>Синхронизация с Mac</h2><button class="done" data-close>Готово</button></div>
+    <div class="field">
+      <div class="label">Адрес Mac в Tailscale</div>
+      <input class="addr" id="syncAddr" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+             placeholder="https://имя-mac.xxxx.ts.net">
+    </div>
+    <div class="field">
+      <div class="label">Что держать на этом устройстве</div>
+      <div class="sync-tabs" id="syncTabs"></div>
+      <div class="hint" style="margin:6px 2px 0">Рейтинги, тексты, картинки и место остановки синхронизируются для всего, а файлы скачиваются только из отмеченных вкладок.</div>
+    </div>
+    <button class="btn primary" id="syncNow" style="width:100%">Синхронизировать</button>
+    <div class="sync-status" id="syncStatus"></div>
   </div>
 </div>
 
@@ -587,9 +625,19 @@ async function remove(m) {
   return true;
 }
 
+// у каждого синхронизируемого поля — время последнего изменения: при синхронизации побеждает более свежее
+const SYNC_FIELDS = ['rating', 'category', 'text', 'cover', 'position', 'done', 'lastPlayed', 'duration'];
+function touch(m, ...names) {
+  m.ts = m.ts || {};
+  const now = Date.now();
+  for (const n of names) m.ts[n] = now;
+}
+
 // изменить поля дорожки и сохранить
 async function update(m, fields) {
   Object.assign(m, fields);
+  touch(m, ...Object.keys(fields).map(k => k === 'hasCover' ? 'cover' : k).filter(k => SYNC_FIELDS.includes(k)));
+  if (current && current.id === m.id && current !== m) current.ts = m.ts;
   const stored = items.find(x => x.id === m.id);
   if (stored && stored !== m) Object.assign(stored, fields);
   if (current && current.id === m.id && current !== m) Object.assign(current, fields);
@@ -727,6 +775,7 @@ async function play(m, file) {
   }, { once: true });
 
   m.lastPlayed = Date.now();
+  touch(m, 'lastPlayed');
   putMeta(m);
   el.play().catch(() => {});
   setupMediaSession(m);
@@ -747,6 +796,7 @@ function savePosition(force) {
   if (!force && now - lastSave < 5000) return;
   lastSave = now;
   current.position = el.currentTime;
+  touch(current, 'position', 'done');
   putMeta(current);
 }
 
@@ -771,7 +821,7 @@ for (const x of [audio, video]) {
   x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
   x.addEventListener('ended', () => {
     if (x !== el || !current) return;
-    current.position = 0; current.done = true; putMeta(current); refresh(); updateUI();
+    current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
   });
   x.addEventListener('error', () => {
     if (x !== el) return;
@@ -900,8 +950,192 @@ openDB().then(async () => {
   await refresh();
 }).catch(() => toast('Не удалось открыть хранилище браузера', null, null, 8000));
 
+// ---------- синхронизация с Mac ----------
+// На Mac работает «Медиатека» (через Tailscale): облегчённые копии файлов и общие рейтинги/тексты/позиции.
+// Синхронизация вручную, когда удобно (например, раз в неделю): всё остальное время плеер работает сам.
+let syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
+let syncing = false;
+const syncAddr = () => (localStorage.getItem('syncAddr') || '').trim().replace(/\/+$/, '');
+
+function ago(t) {
+  const d = Math.floor((Date.now() - t) / 86400000);
+  return d <= 0 ? 'сегодня' : d === 1 ? 'вчера' : d + ' дн. назад';
+}
+function updateSyncLabel() {
+  const last = +localStorage.getItem('lastSync');
+  $('syncLabel').textContent = last ? ago(last) : 'Mac';
+}
+function renderSyncSheet() {
+  $('syncAddr').value = localStorage.getItem('syncAddr') || '';
+  $('syncTabs').innerHTML = CATS.map(c =>
+    `<label><input type="checkbox" data-tab="${c.id}" ${syncTabs.includes(c.id) ? 'checked' : ''}>${c.name}</label>`).join('');
+  const last = +localStorage.getItem('lastSync');
+  if (!syncing) $('syncStatus').textContent = last
+    ? 'Последняя синхронизация: ' + new Date(last).toLocaleString('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    : 'Ещё ни разу не синхронизировалось.';
+}
+$('syncBtn').onclick = () => { renderSyncSheet(); $('syncSheet').classList.add('show'); };
+$('syncAddr').addEventListener('change', () => localStorage.setItem('syncAddr', $('syncAddr').value.trim()));
+$('syncTabs').onchange = () => {
+  syncTabs = [...$('syncTabs').querySelectorAll('input:checked')].map(i => i.dataset.tab);
+  localStorage.setItem('syncTabs', JSON.stringify(syncTabs));
+};
+$('syncNow').onclick = () => { localStorage.setItem('syncAddr', $('syncAddr').value.trim()); sync(); };
+
+function syncStatus(text, frac) {
+  $('syncStatus').innerHTML = esc(text) + (frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : '');
+}
+const blobToDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+
+async function api(path, body) {
+  const r = await fetch(syncAddr() + path, body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// скачать файл, сообщая, сколько байт пришло
+async function download(url, onBytes) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
+  const reader = r.body.getReader();
+  const chunks = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    onBytes(value.length);
+  }
+  return new Blob(chunks, { type: r.headers.get('Content-Type') || '' });
+}
+
+async function sync() {
+  if (syncing) return;
+  if (!/^https?:\/\//.test(syncAddr())) {
+    renderSyncSheet(); $('syncSheet').classList.add('show');
+    syncStatus('Впиши адрес Mac из Tailscale, например https://имя-mac.xxxx.ts.net');
+    return;
+  }
+  syncing = true;
+  syncTabs = JSON.parse(localStorage.getItem('syncTabs') || 'null') || CATS.map(c => c.id);
+  $('syncBtn').classList.add('spin'); $('syncNow').disabled = true;
+  let added = 0, changed = 0, removed = 0;
+  try {
+    syncStatus('Подключаюсь к Mac…');
+    const { items: remoteRaw } = await api('/api/index');
+    // на Mac вкладки — названия папок, в плеере — свои id
+    const TAB_IDS = Object.fromEntries(CATS.map(c => [c.name, c.id]));
+    const remote = remoteRaw.map(r => ({ ...r, tab: TAB_IDS[r.tab] || r.tab }));
+    items = await getAllMeta();
+
+    // 1. рейтинги, вкладки, тексты, картинки, позиции — в обе стороны, по каждому полю побеждает более свежее
+    syncStatus('Свожу рейтинги, тексты и места остановки…');
+    const payload = {};
+    for (const m of items) {
+      if (!m.ts) continue;
+      const fields = {};
+      for (const f of SYNC_FIELDS) if (m.ts[f] && f !== 'cover') fields[f] = m[f] ?? null;
+      if (m.ts.cover) {
+        const b = m.hasCover ? await getBlob('cover:' + m.id).catch(() => null) : null;
+        fields.cover = b ? await blobToDataURL(b) : null;
+      }
+      payload[m.id] = { fields, ts: m.ts };
+    }
+    const { items: merged } = await api('/api/meta', { items: payload });
+    const applyMeta = async m => {
+      const rec = merged[m.id];
+      if (!rec) return false;
+      let any = false;
+      m.ts = m.ts || {};
+      for (const f of SYNC_FIELDS) {
+        const t = rec.ts[f];
+        if (!t || t <= (m.ts[f] || 0)) continue;
+        if (f === 'cover') {
+          const v = rec.fields.cover;
+          if (v) await putBlob('cover:' + m.id, await (await fetch(v)).blob()); else await delBlob('cover:' + m.id);
+          if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
+          m.hasCover = !!v;
+        } else {
+          m[f] = rec.fields[f];
+        }
+        m.ts[f] = t;
+        any = true;
+      }
+      return any;
+    };
+    for (const m of items) {
+      if (current && current.id === m.id) continue;   // то, что играет сейчас, не трогаем
+      if (await applyMeta(m)) { await putMeta(m); changed++; }
+    }
+
+    // 2. файлы с Mac из отмеченных вкладок: новые и изменившиеся
+    const want = remote.filter(r => syncTabs.includes(r.tab));
+    const missing = want.filter(r => {
+      const m = items.find(x => x.id === r.id);
+      return !m || !m.stored || (m.macMtime || 0) < r.mtime;
+    });
+    const total = missing.reduce((s, r) => s + r.size, 0);
+    let got = 0, lastPaint = 0;
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    for (const [i, r] of missing.entries()) {
+      const paint = () => syncStatus(`Скачиваю ${i + 1} из ${missing.length}: ${r.title}\n${fmtSize(got)} из ${fmtSize(total)}`,
+                                     total ? got / total : null);
+      paint();
+      const url = syncAddr() + '/files/' + r.copy.split('/').map(encodeURIComponent).join('/');
+      const blob = await download(url, n => {
+        got += n;
+        if (Date.now() - lastPaint > 300) { lastPaint = Date.now(); paint(); }
+      });
+      const ext = r.copy.slice(r.copy.lastIndexOf('.'));
+      const old = items.find(x => x.id === r.id) || {};
+      const m = { ...old, id: r.id, name: r.title + ext, size: r.size, mime: blob.type,
+                  kind: ext === '.mp4' ? 'video' : 'audio', category: old.category || r.tab,
+                  added: old.added || Date.now(), duration: old.duration || r.duration, position: old.position || 0,
+                  stored: true, macMtime: r.mtime, busy: false };
+      try {
+        await putBlob(r.id, blob);
+      } catch (e) {
+        throw new Error('На устройстве закончилось место. Сними галочки с больших вкладок (например, «Фильмы») и синхронизируй снова.');
+      }
+      await applyMeta(m);
+      await putMeta(m);
+      added++;
+      await refresh();
+    }
+
+    // 3. удалённое на Mac или из снятых вкладок — убираем с устройства (рейтинги и тексты остаются на Mac)
+    const keep = new Set(want.map(r => r.id));
+    for (const m of await getAllMeta()) {
+      if (m.id.startsWith('mac:') && !keep.has(m.id) && !(current && current.id === m.id)) {
+        if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
+        await delAll(m.id);
+        removed++;
+      }
+    }
+
+    localStorage.setItem('lastSync', Date.now());
+    const parts = [];
+    if (added) parts.push('новых файлов: ' + added);
+    if (changed) parts.push('обновлено: ' + changed);
+    if (removed) parts.push('убрано с устройства: ' + removed);
+    syncStatus('Готово. ' + (parts.join(' · ') || 'Всё и так было одинаково.'));
+    toast('Синхронизировано' + (parts.length ? ': ' + parts.join(' · ') : ''));
+  } catch (e) {
+    const offline = e.name === 'TypeError' || /^HTTP/.test(e.message);
+    syncStatus('Не получилось. ' + (offline
+      ? 'Mac не отвечает: проверь, что он включён, а в Tailscale на этом устройстве включён переключатель.'
+      : e.message));
+  } finally {
+    syncing = false;
+    $('syncBtn').classList.remove('spin'); $('syncNow').disabled = false;
+    await refresh();
+    updateSyncLabel();
+  }
+}
+updateSyncLabel();
+
 // для проверки: window.player.addFiles([...File])
-window.player = { addFiles, openOnce };
+window.player = { addFiles, openOnce, sync };
 </script>
 </body>
 </html>
