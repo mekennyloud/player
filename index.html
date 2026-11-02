@@ -260,6 +260,16 @@
   .sync-status { margin-top: 14px; font: 500 10.5px/1.6 var(--mono); text-transform: uppercase; color: var(--muted); white-space: pre-line; min-height: 20px; }
   .sync-status .bar { height: 3px; background: var(--line); margin: 8px 0 2px; }
   .sync-status .bar i { display: block; height: 100%; background: var(--red); }
+  .cats.four { grid-template-columns: repeat(2, 1fr); }
+  /* окно «Storage» */
+  .meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 6px; }
+  .meter i { display: block; height: 100%; background: var(--red); }
+  .st-big { font-weight: 800; font-size: 28px; letter-spacing: -.04em; line-height: 1; }
+  .st-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .st-row .n { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-row .s { font: 500 10px var(--mono); text-transform: uppercase; color: var(--muted); flex: none; }
+  .btn.sm { min-height: 30px; padding: 4px 12px; font-size: 10px; flex: none; }
+  .item.cloud .name, .item.cloud .thumb { opacity: .5; }
   .dup-group { border: 1.5px solid var(--line); border-radius: 14px; padding: 4px; margin-bottom: 10px; }
   .dup-item { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 10px; cursor: pointer; }
   .dup-item input { width: 18px; height: 18px; accent-color: var(--red); flex: none; }
@@ -384,6 +394,10 @@
       <div><div class="mt">Find duplicates</div><div class="ms" id="dupSub">same file twice</div></div>
       <span class="badge" id="dupCount"></span>
     </button>
+    <button class="menu-item" id="storageBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+      <div><div class="mt">Storage</div><div class="ms" id="storageSub">space on this device</div></div>
+    </button>
   </div>
 </div>
 
@@ -444,6 +458,21 @@
   </div>
 </div>
 
+<!-- окно «Storage»: сколько занято, что можно освободить -->
+<div class="sheet-bg" id="storageSheet">
+  <div class="sheet">
+    <div class="grip"></div>
+    <div class="sheet-head"><h2>Storage</h2><button class="done" data-close>Done</button></div>
+    <div class="field">
+      <div class="label">This device</div>
+      <div class="cats" id="stDevice" style="grid-template-columns:1fr 1fr"></div>
+    </div>
+    <div class="field" id="stUsage"></div>
+    <div class="field" id="stFree"></div>
+    <div class="field" id="stBig"></div>
+  </div>
+</div>
+
 <!-- окно «Дорожка»: рейтинг, картинка, вкладка, текст, удаление -->
 <div class="sheet-bg" id="itemSheet">
   <div class="sheet">
@@ -470,6 +499,11 @@
     <div class="field">
       <div class="label">Tab</div>
       <div class="cats" id="isCats"></div>
+    </div>
+    <div class="field">
+      <div class="label">Keep on</div>
+      <div class="cats four" id="isWhere"></div>
+      <div class="hint" id="isWhereHint" style="margin-top:8px"></div>
     </div>
     <div class="field">
       <div class="label">Lyrics &amp; notes</div>
@@ -540,6 +574,25 @@ const normTab = t => (t === 'video' || t === 'movies') ? 'anime' : t;
 const catSvg = (c, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${c.icon}</svg>`;
 const catOf = m => normTab(m.category) || (m.kind === 'video' ? 'anime' : 'music');   // старые записи — по типу файла
 const catById = id => CATS.find(c => c.id === id) || CATS[0];
+
+// ---------- устройства ----------
+// какое это устройство — от него зависит, какие файлы здесь держать (метка «Keep on» у файла)
+const DEVICES = { iphone: 'iPhone', ipad: 'iPad' };
+function detectDevice() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPod/.test(ua)) return 'iphone';
+  if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ipad';
+  return innerWidth >= 820 ? 'ipad' : 'iphone';
+}
+let device = localStorage.getItem('device') || detectDevice();
+const devName = () => DEVICES[device];
+const WHERE = [['all', 'Everywhere'], ['iphone', 'iPhone only'], ['ipad', 'iPad only'], ['mac', 'Mac only']];
+const isMac = m => m.id.startsWith('mac:');
+// держать ли файл с Mac на этом устройстве (свои файлы из «Файлов» и так только здесь)
+const keptHere = where => !where || where === 'all' || where === device;
+// файл с Mac, который сейчас не скачан на это устройство (освободили место или он большой) — ☁
+const inCloud = m => isMac(m) && !m.stored;
+const BIG = 1e9;   // файлы с Mac больше 1 ГБ не качаются сами — только по нажатию
 
 // ---------- утилиты ----------
 const $ = id => document.getElementById(id);
@@ -666,7 +719,7 @@ function renderTabs() {
 
 function visibleItems() {
   const q = query.trim().toLowerCase();
-  const list = items.filter(m => catOf(m) === tab &&
+  const list = items.filter(m => catOf(m) === tab && (!isMac(m) || keptHere(m.where)) &&
     (!q || titleOf(m).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
   const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added);
   const byName = (a, b) => titleOf(a).localeCompare(titleOf(b), 'en', { numeric: true });
@@ -684,6 +737,7 @@ async function refresh() {
   items = await getAllMeta();
   await loadCovers();
   renderTabs();
+  updateStorageSub(sumSize(items.filter(m => m.stored)));
   const list = $('list');
   list.innerHTML = '';
   const shown = visibleItems();
@@ -697,11 +751,13 @@ async function refresh() {
   shown.forEach((m, i) => {
     const li = document.createElement('li');
     const isCur = current && current.id === m.id;
-    li.className = 'item' + (isCur ? ' current' : '') + (m.busy ? ' busy' : '');
+    li.className = 'item' + (isCur ? ' current' : '') + (m.busy ? ' busy' : '') + (inCloud(m) ? ' cloud' : '');
+    li.dataset.id = m.id;
     const res = resumable(m);
     const pct = res && m.duration ? Math.min(100, (m.position || 0) / m.duration * 100) : 0;
     const parts = [];
-    if (m.busy) parts.push('Copying…');
+    if (m.busy) parts.push(isMac(m) ? 'Downloading…' : 'Copying…');
+    else if (inCloud(m)) parts.push('☁ on Mac · ' + fmtSize(m.size) + ' · tap to download');
     else {
       const started = res && m.position > 1 && !m.done;
       if (m.duration) parts.push(!started ? fmtTime(m.duration)
@@ -719,6 +775,7 @@ async function refresh() {
     paintThumb(li.querySelector('.thumb'), m);
     li.onclick = e => {
       if (e.target.closest('.more')) return openItemSheet(m);
+      if (inCloud(m)) return downloadOne(m);
       if (!m.stored) {
         // файл лежит в «Файлах» — просим выбрать его снова (синхронно, чтобы iOS открыла выбор)
         pendingReopen = m;
@@ -742,6 +799,8 @@ async function addFiles(files) {
   for (const f of files) {
     const id = fileId(f);
     if (items.some(m => m.id === id && m.stored)) { toast('“' + prettyName(f.name) + '” is already here'); continue; }
+    const twin = items.find(m => m.stored && m.size === f.size && m.kind === kindOf(f));   // тот же файл под другим именем
+    if (twin) { toast('Already here as “' + titleOf(twin) + '”'); continue; }
     const old = items.find(m => m.id === id) || {};
     const m = { ...old, id, name: f.name, size: f.size, mime: f.type, kind: kindOf(f), added: old.added || Date.now(),
                 position: old.position || 0, duration: old.duration || 0, category: old.category || tab,
@@ -773,7 +832,23 @@ async function openOnce(f) {
   play(m, f);
 }
 
+// убрать файл с Mac с этого устройства: место освобождается, в списке он остаётся с ☁ (рейтинг и место — тоже)
+async function offload(m) {
+  if (current && current.id === m.id) stop();
+  await delBlob(m.id);
+  const fresh = await idb('meta', 'readonly', s => s.get(m.id)) || m;
+  Object.assign(fresh, { stored: false });
+  await putMeta(fresh);
+  m.stored = false;
+}
+
 async function remove(m) {
+  if (isMac(m)) {
+    if (!m.stored) return false;
+    if (!confirm('Remove “' + titleOf(m) + '” from this ' + devName() + '? It stays on your Mac — tap it to download again.')) return false;
+    await offload(m); refresh();
+    return true;
+  }
   const what = m.stored ? 'Delete “' + titleOf(m) + '” from the player?'
                         : 'Remove “' + titleOf(m) + '” from the list? The file stays in Files.';
   if (!confirm(what)) return false;
@@ -785,7 +860,7 @@ async function remove(m) {
 }
 
 // у каждого синхронизируемого поля — время последнего изменения: при синхронизации побеждает более свежее
-const SYNC_FIELDS = ['rating', 'category', 'text', 'cover', 'position', 'done', 'lastPlayed', 'duration', 'title'];
+const SYNC_FIELDS = ['rating', 'category', 'text', 'cover', 'position', 'done', 'lastPlayed', 'duration', 'title', 'where'];
 function touch(m, ...names) {
   m.ts = m.ts || {};
   const now = Date.now();
@@ -829,7 +904,26 @@ function renderItemSheet() {
   $('isCoverDel').style.display = m.hasCover ? '' : 'none';
   $('isCats').innerHTML = CATS.map(c => `<button data-cat="${c.id}" class="${catOf(m) === c.id ? 'on' : ''}">${c.name}</button>`).join('');
   $('isText').textContent = m.text ? 'Open text' : 'Add text';
+  const mac = isMac(m);
+  $('isWhere').style.display = mac ? '' : 'none';
+  $('isWhere').innerHTML = WHERE.map(([id, name]) => `<button data-where="${id}" class="${(m.where || 'all') === id ? 'on' : ''}">${name}</button>`).join('');
+  $('isWhereHint').textContent = mac
+    ? 'Applies on every device after sync · ' + fmtSize(m.size)
+    : 'Only on this ' + devName() + ' — added from Files · ' + fmtSize(m.size);
+  $('isDelete').style.display = mac && !m.stored ? 'none' : '';
+  $('isDelete').textContent = mac ? 'Remove from this ' + devName() : 'Delete';
 }
+$('isWhere').onclick = async e => {
+  const b = e.target.closest('button'); const m = sheetItem; if (!b || !m) return;
+  await update(m, { where: b.dataset.where === 'all' ? '' : b.dataset.where });
+  // больше не для этого устройства — сразу освобождаем место; метка уйдёт на Mac при синхронизации
+  if (!keptHere(m.where) && m.stored) {
+    await offload(m);
+    toast('Removed from this ' + devName() + ' · freed ' + fmtSize(m.size));
+    closeSheets();
+  } else renderItemSheet();
+  refresh();
+};
 // переименование: сохраняем по Enter/«Done» на клавиатуре и при уходе из поля; пустое — вернуть имя файла
 async function saveName() {
   const m = sheetItem; if (!m) return;
@@ -1285,10 +1379,10 @@ async function probeDuration(m) {
 }
 
 // какой оставить: копию с Mac (синхронизация её всё равно держит), потом то, что внутри плеера,
-// потом с рейтингом/текстом/картинкой, потом без «(1)»/«копия», потом самый большой файл (лучше качество)
+// потом без «(1)»/«копия», потом с рейтингом/текстом/картинкой (их всё равно перенесём), потом самый большой файл
 function keepScore(m) {
   const isCopyName = /([(\[]\s*(\d+|копия|copy)\s*[)\]]|[\s_-](\d|копия|copy))$/i.test(prettyName(m.name));
-  return (m.id.startsWith('mac:') ? 8 : 0) + (m.stored ? 4 : 0) + (m.rating || m.text || m.hasCover ? 2 : 0) + (isCopyName ? 0 : 1);
+  return (m.id.startsWith('mac:') ? 8 : 0) + (m.stored ? 4 : 0) + (m.rating || m.text || m.hasCover ? 1 : 0) + (isCopyName ? 0 : 2);
 }
 
 async function findDuplicates() {
@@ -1361,6 +1455,16 @@ function updateDupBtn() {
 
 async function checkDuplicates(auto = false) {
   dupGroups = await findDuplicates();
+  if (auto) {
+    // точные копии (байт в байт тот же размер) сливаем без вопросов, похожие — показываем
+    const exact = dupGroups.filter(g => g.items.every(m => m.size && m.size === g.items[0].size));
+    for (const g of exact) await mergeInto(g.items[0], g.items.slice(1));
+    if (exact.length) {
+      dupGroups = await findDuplicates();
+      await refresh();
+      if (!dupGroups.length) toast('Removed exact copies: ' + exact.reduce((n, g) => n + g.items.length - 1, 0));
+    }
+  }
   updateDupBtn();
   if (!auto) openDupSheet();
   else if (dupGroups.length) toast('Found duplicates: ' + dupGroups.length, 'Review', openDupSheet, 8000);
@@ -1491,7 +1595,8 @@ async function sync() {
   let added = 0, changed = 0, removed = 0;
   try {
     syncStatus('Connecting to Mac…');
-    const { items: remoteRaw } = await api('/api/index');
+    const { items: remoteRaw, mac } = await api('/api/index');
+    if (mac) localStorage.setItem('macStorage', JSON.stringify({ ...mac, at: Date.now() }));
     // на Mac вкладки — названия папок, в плеере — свои id
     const remote = remoteRaw.map(r => ({ ...r, tab: MAC_TABS[r.tab] || r.tab }));
     items = await getAllMeta();
@@ -1538,10 +1643,26 @@ async function sync() {
 
     // 2. файлы с Mac из отмеченных вкладок: новые и изменившиеся
     const skip = syncSkip();   // копии с Mac, которые убрали как дубли
-    const want = remote.filter(r => syncTabs.includes(r.tab) && !skip.has(r.id));
+    // метка «Keep on» — своя или пришедшая с Mac (для файлов, которых здесь ещё нет)
+    const whereOf = r => { const m = items.find(x => x.id === r.id); return m ? m.where : merged[r.id]?.fields?.where; };
+    const want = remote.filter(r => syncTabs.includes(r.tab) && !skip.has(r.id) && keptHere(whereOf(r)));
+    const macMeta = (r, old, type) => {
+      const ext = r.copy.slice(r.copy.lastIndexOf('.'));
+      return { ...old, id: r.id, name: r.title + ext, size: r.size, mime: type || old.mime || '',
+               kind: ext === '.mp4' ? 'video' : 'audio', category: old.category || r.tab,
+               added: old.added || Date.now(), duration: old.duration || r.duration, position: old.position || 0,
+               stored: false, macMtime: r.mtime, busy: false };
+    };
+    // большие новые файлы не качаем — появляются с ☁, скачиваются по нажатию
+    for (const r of want) {
+      if (r.size <= BIG || items.some(x => x.id === r.id)) continue;
+      const m = macMeta(r, {});
+      await applyMeta(m); await putMeta(m); items.push(m); added++;
+    }
     const missing = want.filter(r => {
       const m = items.find(x => x.id === r.id);
-      return !m || !m.stored || (m.macMtime || 0) < r.mtime;
+      if (m && !m.stored) return false;   // ☁ — место освобождено специально или файл большой
+      return !m || (m.macMtime || 0) < r.mtime;
     });
     const total = missing.reduce((s, r) => s + r.size, 0);
     let got = 0, lastPaint = 0;
@@ -1556,16 +1677,11 @@ async function sync() {
         got += n;
         if (Date.now() - lastPaint > 300) { lastPaint = Date.now(); paint(); }
       });
-      const ext = r.copy.slice(r.copy.lastIndexOf('.'));
-      const old = items.find(x => x.id === r.id) || {};
-      const m = { ...old, id: r.id, name: r.title + ext, size: r.size, mime: blob.type,
-                  kind: ext === '.mp4' ? 'video' : 'audio', category: old.category || r.tab,
-                  added: old.added || Date.now(), duration: old.duration || r.duration, position: old.position || 0,
-                  stored: true, macMtime: r.mtime, busy: false };
+      const m = { ...macMeta(r, items.find(x => x.id === r.id) || {}, blob.type), stored: true };
       try {
         await putBlob(r.id, blob);
       } catch (e) {
-        throw new Error('This device is out of space. Uncheck big tabs (like Movies) and sync again.');
+        throw new Error('This device is out of space. Free some up in ☰ → Storage, or mark big files “Mac only”, and sync again.');
       }
       await applyMeta(m);
       await putMeta(m);
@@ -1589,7 +1705,9 @@ async function sync() {
     if (added) parts.push('new files: ' + added);
     if (changed) parts.push('updated: ' + changed);
     if (removed) parts.push('removed from device: ' + removed);
-    syncStatus('Done. ' + (parts.join(' · ') || 'Already up to date.'));
+    const w = watchedHere();
+    syncStatus('Done. ' + (parts.join(' · ') || 'Already up to date.')
+      + (w.length ? `\nWatched or finished: ${w.length} · ${fmtSize(w.reduce((s, m) => s + (m.size || 0), 0))} can be freed in ☰ → Storage` : ''));
     toast('Synced' + (parts.length ? ': ' + parts.join(' · ') : ''));
     setTimeout(() => checkDuplicates(true), 4500);   // после подсказки о синхронизации — проверка дублей
   } catch (e) {
@@ -1611,6 +1729,113 @@ async function sync() {
   }
 }
 updateSyncLabel();
+
+// скачать с Mac один файл с ☁ (по нажатию в списке)
+let downloading = null;
+async function downloadOne(m) {
+  if (downloading) return toast('Already downloading “' + titleOf(downloading) + '”');
+  if (!/^https?:\/\//.test(syncAddr())) return toast('Set up Sync with Mac first');
+  downloading = m;
+  const sub = () => document.querySelector(`[data-id="${CSS.escape(m.id)}"] .sub`);
+  try {
+    if (sub()) sub().textContent = 'Connecting to Mac…';
+    const { items: remote } = await api('/api/index');
+    const r = remote.find(x => x.id === m.id);
+    if (!r) throw new Error('gone');
+    let got = 0, last = 0;
+    const url = syncAddr() + '/files/' + r.copy.split('/').map(encodeURIComponent).join('/');
+    const blob = await download(url, n => {
+      got += n;
+      if (Date.now() - last > 400 && sub()) { last = Date.now(); sub().textContent = `Downloading… ${Math.round(got / r.size * 100)}% of ${fmtSize(r.size)}`; }
+    });
+    await putBlob(m.id, blob);
+    const fresh = await idb('meta', 'readonly', s => s.get(m.id)) || m;
+    Object.assign(fresh, { stored: true, size: r.size, macMtime: r.mtime, mime: blob.type });
+    await putMeta(fresh);
+    toast('Downloaded “' + titleOf(m) + '”');
+  } catch (e) {
+    toast(e.message === 'gone' ? 'It’s no longer on your Mac'
+      : e.name === 'QuotaExceededError' ? 'Not enough space — free some up in ☰ → Storage'
+      : 'Couldn’t reach your Mac. Is Mediateka running?', null, null, 6000);
+  } finally {
+    downloading = null;
+    refresh();
+  }
+}
+
+// ---------- место на устройстве ----------
+const watchedHere = () => items.filter(m => m.stored && m.done && resumable(m));
+const sumSize = list => list.reduce((s, m) => s + (m.size || 0), 0);
+
+function stRows(list) {
+  return list.map(m => `<div class="st-row"><div class="n"></div><span class="s">${fmtSize(m.size)}${isMac(m) ? '' : ' · only here'}</span>
+    <button class="btn sm${isMac(m) ? '' : ' danger'}" data-free="${esc(m.id)}">${isMac(m) ? 'Remove' : 'Delete'}</button></div>`).join('');
+}
+function fillNames(box, list) { box.querySelectorAll('.st-row .n').forEach((n, i) => n.textContent = titleOf(list[i])); }
+
+async function renderStorage() {
+  items = await getAllMeta();
+  $('stDevice').innerHTML = Object.entries(DEVICES).map(([id, name]) =>
+    `<button data-dev="${id}" class="${device === id ? 'on' : ''}">${name}</button>`).join('');
+  const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
+  const stored = items.filter(m => m.stored);
+  const used = est.usage || sumSize(stored);
+  const byTab = CATS.map(c => { const l = stored.filter(m => catOf(m) === c.id); return `${c.name} ${l.length}` + (l.length ? ' · ' + fmtSize(sumSize(l)) : ''); });
+  const cloud = items.filter(m => inCloud(m) && keptHere(m.where));
+  const mac = JSON.parse(localStorage.getItem('macStorage') || 'null');
+  $('stUsage').innerHTML = `<div class="label">Player on this ${devName()}</div>
+    <div class="st-big">${fmtSize(used)}</div>
+    ${est.quota ? `<div class="meter"><i style="width:${Math.min(100, used / est.quota * 100).toFixed(1)}%"></i></div>
+      <div class="hint">${fmtSize(Math.max(0, est.quota - used))} more allowed for the player</div>` : ''}
+    <div class="hint" style="margin-top:6px">${byTab.join('<br>')}${cloud.length ? `<br>☁ On Mac, not downloaded: ${cloud.length} · ${fmtSize(sumSize(cloud))}` : ''}</div>
+    ${mac ? `<div class="hint" style="margin-top:6px">Mac: library ${fmtSize(mac.used)} · ${fmtSize(mac.free)} free (${ago(mac.at)})</div>` : ''}`;
+
+  const w = watchedHere();
+  $('stFree').innerHTML = `<div class="label">Can be freed</div>` + (w.length
+    ? `<div class="hint" style="margin-bottom:6px">Watched or finished · ${fmtSize(sumSize(w))}. From Mac — stays there with your place, tap ☁ to get it back.</div>
+       ${stRows(w)}<button class="btn" id="stFreeAll" style="width:100%;margin-top:10px">Free ${fmtSize(sumSize(w))}</button>`
+    : '<div class="hint">Nothing watched or finished is taking space 👍</div>')
+    + (dupGroups.length ? `<button class="btn danger" id="stDups" style="width:100%;margin-top:10px">Duplicates: ${dupGroups.length} — review</button>` : '');
+  fillNames($('stFree'), w);
+
+  const big = stored.filter(m => !w.includes(m)).sort((a, b) => (b.size || 0) - (a.size || 0)).slice(0, 5);
+  $('stBig').innerHTML = big.length ? `<div class="label">Biggest files</div>${stRows(big)}` : '';
+  fillNames($('stBig'), big);
+  updateStorageSub(used, w);
+}
+function updateStorageSub(used, w = watchedHere()) {
+  $('storageSub').textContent = fmtSize(used) + ' used' + (w.length ? ' · ' + fmtSize(sumSize(w)) + ' can be freed' : '');
+}
+
+async function freeItem(m, ask = true) {
+  if (isMac(m)) { await offload(m); return true; }
+  if (ask && !confirm('Delete “' + titleOf(m) + '”? It was added from Files and exists only on this ' + devName() + '.')) return false;
+  if (current && current.id === m.id) stop();
+  await delAll(m.id);
+  return true;
+}
+
+$('storageBtn').onclick = async () => { closeMenu(); await renderStorage(); $('storageSheet').classList.add('show'); };
+$('storageSheet').onclick = async e => {
+  const dev = e.target.closest('[data-dev]');
+  if (dev) { device = dev.dataset.dev; localStorage.setItem('device', device); await refresh(); return renderStorage(); }
+  const one = e.target.closest('[data-free]');
+  if (one) {
+    const m = items.find(x => x.id === one.dataset.free);
+    if (m && await freeItem(m)) { await refresh(); renderStorage(); }
+    return;
+  }
+  if (e.target.closest('#stFreeAll')) {
+    const w = watchedHere();
+    const local = w.filter(m => !isMac(m));
+    if (!confirm(`Free ${fmtSize(sumSize(w))}?` + (local.length
+      ? ` ${local.length} of them were added from Files and will be deleted for good.` : ' They stay on your Mac.'))) return;
+    for (const m of w) await freeItem(m, false);
+    toast('Freed ' + fmtSize(sumSize(w)));
+    await refresh(); renderStorage();
+  }
+  if (e.target.closest('#stDups')) { closeSheets(); openDupSheet(); }
+};
 
 // для проверки: window.player.addFiles([...File])
 window.player = { addFiles, openOnce, sync };
