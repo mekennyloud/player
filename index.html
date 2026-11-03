@@ -772,7 +772,7 @@ function visibleItems() {
   const q = query.trim().toLowerCase();
   const list = items.filter(m => catOf(m) === tab && (!isMac(m) || keptHere(m.where)) &&
     (!q || titleOf(m).toLowerCase().includes(q) || (m.text || '').toLowerCase().includes(q)));
-  const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added);
+  const recent = (a, b) => (b.lastPlayed || b.added) - (a.lastPlayed || a.added) || (a.part || 0) - (b.part || 0);
   const byName = (a, b) => titleOf(a).localeCompare(titleOf(b), 'en', { numeric: true });
   const rnd = m => { if (!shuffle.has(m.id)) shuffle.set(m.id, Math.random()); return shuffle.get(m.id); };
   if (sort === 'rating-desc') list.sort((a, b) => (b.rating || 0) - (a.rating || 0) || recent(a, b));
@@ -961,7 +961,9 @@ function renderItemSheet() {
   const mac = isMac(m);
   $('isWhere').style.display = mac ? '' : 'none';
   $('isWhere').innerHTML = WHERE.map(([id, name]) => `<button data-where="${id}" class="${(m.where || 'all') === id ? 'on' : ''}">${name}</button>`).join('');
-  $('isWhereHint').textContent = mac
+  $('isWhereHint').textContent = mac && m.group
+    ? `Part ${m.part} of ${m.partCount} · ${fmtSize(m.size)}. Applies to all parts, on every device after sync · whole video ${fmtSize(m.groupSize)}`
+    : mac
     ? 'Applies on every device after sync · ' + fmtSize(m.size)
     : 'Only on this ' + devName() + ' — added from Files · ' + fmtSize(m.size);
   $('isDelete').style.display = mac && !m.stored ? 'none' : '';
@@ -969,11 +971,17 @@ function renderItemSheet() {
 }
 $('isWhere').onclick = async e => {
   const b = e.target.closest('button'); const m = sheetItem; if (!b || !m) return;
-  await update(m, { where: b.dataset.where === 'all' ? '' : b.dataset.where });
-  // больше не для этого устройства — сразу освобождаем место; метка уйдёт на Mac при синхронизации
-  if (!keptHere(m.where) && m.stored) {
-    await offload(m);
-    toast('Removed from this ' + devName() + ' · freed ' + fmtSize(m.size));
+  const where = b.dataset.where === 'all' ? '' : b.dataset.where;
+  // у длинного видео метка — сразу на все части
+  const all = m.group ? items.filter(x => x.group === m.group) : [m];
+  let freed = 0;
+  for (const x of all) {
+    await update(x, { where });
+    // больше не для этого устройства — сразу освобождаем место; метка уйдёт на Mac при синхронизации
+    if (!keptHere(x.where) && x.stored) { await offload(x); freed += x.size || 0; }
+  }
+  if (!keptHere(where)) {
+    if (freed) toast('Removed from this ' + devName() + ' · freed ' + fmtSize(freed));
     closeSheets();
   } else renderItemSheet();
   refresh();
@@ -1214,6 +1222,7 @@ for (const x of [audio, video]) {
     if (!resumable(current)) { updateUI(); step(1); return; }   // песня доиграла — следующая
     current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
     if (catOf(current) === 'audiobooks') step(1);               // глава аудиокниги закончилась — следующая
+    else if (current.group) nextPart(current);                  // часть длинного видео — сразу следующая
   });
   x.addEventListener('error', () => {
     if (x !== el) return;
@@ -1551,7 +1560,9 @@ async function findDuplicates() {
     const t = m.kind + '|' + normTitle(m.name);
     byTitle.set(t, [...(byTitle.get(t) || []), m]);
   }
-  for (const g of bySize.values()) for (let i = 1; i < g.length; i++) join(g[0].id, g[i].id);
+  // части одного длинного видео (одно название, по 2 часа) — не дубли друг друга
+  const samePart = (a, b) => a.group && a.group === b.group;
+  for (const g of bySize.values()) for (let i = 1; i < g.length; i++) if (!samePart(g[0], g[i])) join(g[0].id, g[i].id);
   for (const g of byTitle.values()) {
     if (g.length < 2) continue;
     for (const m of g) {
@@ -1564,7 +1575,7 @@ async function findDuplicates() {
       if (fresh && !fresh.duration) { fresh.duration = d; await putMeta(fresh); }
     }
     for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++)
-      if (g[i].duration && g[j].duration && Math.abs(g[i].duration - g[j].duration) <= 2) join(g[i].id, g[j].id);
+      if (!samePart(g[i], g[j]) && g[i].duration && g[j].duration && Math.abs(g[i].duration - g[j].duration) <= 2) join(g[i].id, g[j].id);
   }
   const groups = new Map();
   for (const m of all) groups.set(find(m.id), [...(groups.get(find(m.id)) || []), m]);
@@ -1845,12 +1856,13 @@ async function sync() {
       const ext = r.copy.slice(r.copy.lastIndexOf('.'));
       return { ...old, id: r.id, name: r.title + ext, size: r.size, mime: type || old.mime || '',
                kind: ext === '.mp4' ? 'video' : 'audio', category: old.category || r.tab,
-               added: old.added || Date.now(), duration: old.duration || r.duration, position: old.position || 0,
-               stored: false, macMtime: r.mtime, busy: false };
+               added: old.added || (r.group ? r.mtime * 1000 : Date.now()), duration: old.duration || r.duration, position: old.position || 0,
+               stored: false, macMtime: r.mtime, busy: false,
+               ...(r.group ? { group: r.group, part: r.part, partCount: r.parts, groupSize: r.group_size } : {}) };
     };
-    // большие новые файлы не качаем — появляются с ☁, скачиваются по нажатию
+    // большие новые файлы не качаем — появляются с ☁, скачиваются по нажатию; части длинного видео — по размеру целого
     for (const r of want) {
-      if (r.size <= BIG || items.some(x => x.id === r.id)) continue;
+      if ((r.group_size || r.size) <= BIG || items.some(x => x.id === r.id)) continue;
       const m = macMeta(r, {});
       await applyMeta(m); await putMeta(m); items.push(m); added++;
     }
@@ -2006,10 +2018,32 @@ async function syncPhotos() {
   return { added, removed, sent };
 }
 
-// скачать с Mac один файл с ☁ (по нажатию в списке)
+// длинное видео с Mac приходит частями по ~2 часа: часть кончилась — включаем следующую (или предлагаем скачать)
+const partsOf = m => items.filter(x => x.group === m.group).sort((a, b) => a.part - b.part);
+async function nextPart(m) {
+  const next = partsOf(m).find(x => x.part === m.part + 1);
+  if (!next) return;
+  if (!next.stored) return toast(`Part ${next.part} is on your Mac`, 'Download', () => downloadOne(next), 8000);
+  await play(next);
+  el.play().catch(() => {});
+}
+// все части, которых здесь ещё нет, — по очереди
+async function downloadParts(m) {
+  for (const x of partsOf(m)) {
+    while (downloading) await new Promise(r => setTimeout(r, 1000));   // сначала докачается та, что уже идёт
+    const fresh = items.find(y => y.id === x.id);
+    if (!fresh || fresh.stored) continue;
+    if (!await downloadOne(fresh, true)) break;
+  }
+}
+
+// скачать с Mac один файл с ☁ (по нажатию в списке); true — скачался
 let downloading = null;
-async function downloadOne(m) {
-  if (downloading) return toast('Already downloading “' + titleOf(downloading) + '”');
+async function downloadOne(m, inSeries) {
+  if (m.group && !inSeries && partsOf(m).some(x => !x.stored && x.id !== m.id)) {
+    toast(`Downloading part ${m.part} of ${m.partCount}`, 'All parts', () => downloadParts(m), 6000);
+  }
+  if (downloading) { if (!inSeries) toast('Already downloading “' + titleOf(downloading) + '”'); return false; }
   if (!/^https?:\/\//.test(syncAddr())) return toast('Set up Sync with Mac first');
   downloading = m;
   const sub = () => document.querySelector(`[data-id="${CSS.escape(m.id)}"] .sub`);
@@ -2030,10 +2064,12 @@ async function downloadOne(m) {
     if (res.parts) fresh.parts = res.parts; else delete fresh.parts;
     await putMeta(fresh);
     toast('Downloaded “' + titleOf(m) + '”');
+    return true;
   } catch (e) {
     toast(e.message === 'gone' ? 'It’s no longer on your Mac'
       : isQuota(e) ? 'Not enough space — free some up in ☰ → Storage'
       : 'Couldn’t reach your Mac. Is Mediateka running?', null, null, 6000);
+    return false;
   } finally {
     downloading = null;
     refresh();
