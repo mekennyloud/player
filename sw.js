@@ -1,6 +1,6 @@
 // Кэширует сам плеер, чтобы он открывался без интернета.
 // При обновлении плеера увеличь номер версии.
-const CACHE = 'player-v16';
+const CACHE = 'player-v17';
 const FILES = ['./', 'index.html', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
   'fonts/InterTight-latin.woff2', 'fonts/InterTight-cyrillic.woff2', 'fonts/JetBrainsMono-latin.woff2', 'fonts/JetBrainsMono-cyrillic.woff2'];
@@ -13,9 +13,10 @@ self.addEventListener('install', e => {
     .then(() => self.skipWaiting()));
 });
 
+// у Kokoro тот же адрес сайта — чистим только свои старые кэши
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => k.startsWith('player-') && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
