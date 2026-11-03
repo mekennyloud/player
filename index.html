@@ -469,9 +469,9 @@
              placeholder="https://your-mac.xxxx.ts.net">
     </div>
     <div class="field">
-      <div class="label">Keep on this device</div>
+      <div class="label">Download from Mac</div>
       <div class="sync-tabs" id="syncTabs"></div>
-      <div class="hint" style="margin-top:8px">Ratings, notes, covers and positions sync for everything. Files download only from checked tabs.</div>
+      <div class="hint" style="margin-top:8px">Ratings, notes, covers and positions sync for everything. New files download only from checked tabs; unchecked tabs keep what’s already here.</div>
     </div>
     <button class="btn primary" id="syncNow" style="width:100%">Sync now</button>
     <div class="sync-status" id="syncStatus"></div>
@@ -1900,15 +1900,21 @@ async function sync() {
       }
     }
 
-    // 4. удалённое на Mac или из снятых вкладок — убираем с устройства (рейтинги и тексты остаются на Mac)
+    // 4. удалённое на Mac или помеченное «Keep on» для другого устройства — убираем отсюда
+    //    (рейтинги и тексты остаются на Mac). Снятая галочка вкладки ничего не удаляет: с неё просто не качается новое.
     stopIfAborted();
-    const keep = new Set(want.map(r => r.id));
-    for (const m of await getAllMeta()) {
-      if (m.id.startsWith('mac:') && !keep.has(m.id) && !(current && current.id === m.id)) {
-        if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
-        await delAll(m.id);
-        removed++;
-      }
+    const onMac = new Set(remote.map(r => r.id));
+    const drop = (await getAllMeta()).filter(m => isMac(m) && !(current && current.id === m.id) &&
+      (!onMac.has(m.id) || !keptHere(m.where)));
+    // если с Mac разом пропало много файлов (например, папку Медиатеки переложили) — сначала спрашиваем
+    const gone = drop.filter(m => !onMac.has(m.id));
+    const keepGone = gone.length > 5 &&
+      !confirm(`${gone.length} files are no longer on your Mac. Remove them from this device too?`);
+    for (const m of drop) {
+      if (keepGone && !onMac.has(m.id)) continue;
+      if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
+      await delAll(m.id);
+      removed++;
     }
 
     localStorage.setItem('lastSync', Date.now());
