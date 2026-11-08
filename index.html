@@ -486,7 +486,9 @@
     <div class="field">
       <div class="label">This device</div>
       <div class="cats" id="stDevice" style="grid-template-columns:1fr 1fr"></div>
+      <div class="hint" id="stDeviceHint" style="margin-top:8px;color:var(--red)"></div>
     </div>
+    <div class="field" id="stHidden"></div>
     <div class="field" id="stUsage"></div>
     <div class="field" id="stFree"></div>
     <div class="field" id="stBig"></div>
@@ -523,6 +525,7 @@
     <div class="field">
       <div class="label">Keep on</div>
       <div class="cats four" id="isWhere"></div>
+      <div class="hint" id="isWhereDev" style="margin-top:8px"></div>
       <div class="hint" id="isWhereHint" style="margin-top:8px"></div>
     </div>
     <div class="field">
@@ -637,6 +640,9 @@ const WHERE = [['all', 'Everywhere'], ['iphone', 'iPhone only'], ['ipad', 'iPad 
 const isMac = m => m.id.startsWith('mac:');
 // держать ли файл с Mac на этом устройстве (свои файлы из «Файлов» и так только здесь)
 const keptHere = where => !where || where === 'all' || where === device;
+// в Storage выбрано не то устройство, на котором открыт плеер: метки «Keep on» сработают наоборот
+const deviceWrong = () => detectDevice() !== device;
+const deviceNote = () => `This looks like an ${DEVICES[detectDevice()]}, but the player is set up as ${devName()}. Fix it in ☰ → Storage → This device.`;
 // файл с Mac, который сейчас не скачан на это устройство (освободили место или он большой) — ☁
 const inCloud = m => isMac(m) && !m.stored;
 const BIG = 1e9;   // файлы с Mac больше 1 ГБ не качаются сами — только по нажатию
@@ -961,6 +967,9 @@ function renderItemSheet() {
   const mac = isMac(m);
   $('isWhere').style.display = mac ? '' : 'none';
   $('isWhere').innerHTML = WHERE.map(([id, name]) => `<button data-where="${id}" class="${(m.where || 'all') === id ? 'on' : ''}">${name}</button>`).join('');
+  $('isWhereDev').style.display = mac ? '' : 'none';
+  $('isWhereDev').style.color = deviceWrong() ? 'var(--red)' : '';
+  $('isWhereDev').textContent = deviceWrong() ? deviceNote() : 'This player is set up as ' + devName();
   $('isWhereHint').textContent = mac && m.group
     ? `Part ${m.part} of ${m.partCount} · ${fmtSize(m.size)}. Applies to all parts, on every device after sync · whole video ${fmtSize(m.groupSize)}`
     : mac
@@ -974,6 +983,15 @@ $('isWhere').onclick = async e => {
   const where = b.dataset.where === 'all' ? '' : b.dataset.where;
   // у длинного видео метка — сразу на все части
   const all = m.group ? items.filter(x => x.group === m.group) : [m];
+  if (where === (m.where || '')) return;
+  if (!keptHere(where)) {
+    const name = WHERE.find(([id]) => id === b.dataset.where)[1];
+    const got = all.filter(x => x.stored);
+    if (!confirm((deviceWrong() ? deviceNote() + '\n\n' : `This player is set up as ${devName()}. `)
+      + `“${name}” will hide ${all.length > 1 ? `all ${all.length} parts` : 'this file'} on this ${devName()}`
+      + (got.length ? ` and delete the downloaded copies (${fmtSize(sumSize(got))})` : '')
+      + '. They stay on your Mac, and you can bring them back in ☰ → Storage.')) return;
+  }
   let freed = 0;
   for (const x of all) {
     await update(x, { where });
@@ -1852,6 +1870,9 @@ async function sync() {
     // метка «Keep on» — своя или пришедшая с Mac (для файлов, которых здесь ещё нет)
     const whereOf = r => { const m = items.find(x => x.id === r.id); return m ? m.where : merged[r.id]?.fields?.where; };
     const want = remote.filter(r => syncTabs.includes(r.tab) && !skip.has(r.id) && keptHere(whereOf(r)));
+    // скрытое меткой запоминаем для Storage: строк в списках у него нет, а метку должно быть можно снять отсюда
+    saveHiddenList(remote.filter(r => syncTabs.includes(r.tab) && !skip.has(r.id) && !keptHere(whereOf(r)))
+      .map(r => ({ id: r.id, title: r.title, where: whereOf(r), group: r.group })));
     const macMeta = (r, old, type) => {
       const ext = r.copy.slice(r.copy.lastIndexOf('.'));
       return { ...old, id: r.id, name: r.title + ext, size: r.size, mime: type || old.mime || '',
@@ -1922,8 +1943,16 @@ async function sync() {
     const gone = drop.filter(m => !onMac.has(m.id));
     const keepGone = gone.length > 5 &&
       !confirm(`${gone.length} files are no longer on your Mac. Remove them from this device too?`);
+    // метка пришла с другого устройства: скачанное здесь просто так не удаляем
+    const leaving = drop.filter(m => onMac.has(m.id) && m.stored);
+    const keepLeaving = leaving.length > 0 && !confirm((deviceWrong() ? deviceNote() + '\n\n' : '')
+      + `${leaving.length} downloaded ${leaving.length > 1 ? 'files' : 'file'} (${fmtSize(sumSize(leaving))}) marked for another device. `
+      + `Remove from this ${devName()}? They stay on your Mac. Cancel keeps them on every device.`);
+    // «оставить» относится и к остальным частям того же видео — иначе метки у частей разойдутся
+    const isKept = m => keepLeaving && onMac.has(m.id) && (m.stored || leaving.some(x => x.group && x.group === m.group));
     for (const m of drop) {
       if (keepGone && !onMac.has(m.id)) continue;
+      if (isKept(m)) { await update(m, { where: '' }); continue; }
       if (covers.has(m.id)) { URL.revokeObjectURL(covers.get(m.id)); covers.delete(m.id); }
       await delAll(m.id);
       removed++;
@@ -2086,10 +2115,57 @@ function stRows(list) {
 }
 function fillNames(box, list) { box.querySelectorAll('.st-row .n').forEach((n, i) => n.textContent = titleOf(list[i])); }
 
+// файлы с Mac, скрытые на этом устройстве меткой «Keep on»: уже убранные отсюда Sync-ом знает только сохранённый список
+const hiddenList = () => { try { return JSON.parse(localStorage.getItem('hiddenHere')) || []; } catch (e) { return []; } };
+const saveHiddenList = list => localStorage.setItem('hiddenHere', JSON.stringify(list));
+function hiddenHere() {
+  const known = new Set(items.map(m => m.id));
+  return [
+    ...items.filter(m => isMac(m) && !keptHere(m.where)).map(m => ({ id: m.id, title: titleOf(m), where: m.where, group: m.group })),
+    ...hiddenList().filter(h => !known.has(h.id) && !keptHere(h.where)),
+  ];
+}
+function renderHidden() {
+  const groups = new Map();   // части одного видео — одной строкой
+  for (const h of hiddenHere()) {
+    const key = h.group || h.id;
+    if (!groups.has(key)) groups.set(key, { key, title: h.title.replace(/\s*·\s*Часть \d+$/, ''), where: h.where, n: 0 });
+    groups.get(key).n++;
+  }
+  const rows = [...groups.values()];
+  $('stHidden').innerHTML = rows.length ? `<div class="label">Hidden on this ${devName()}</div>
+    <div class="hint" style="margin-bottom:6px">Marked for another device. They stay on your Mac.</div>`
+    + rows.map(g => `<div class="st-row"><div class="n"></div><span class="s">${g.n > 1 ? g.n + ' parts · ' : ''}${esc((WHERE.find(([id]) => id === g.where) || [, g.where])[1])}</span>
+      <button class="btn sm" data-unhide="${esc(g.key)}">Show here</button></div>`).join('') : '';
+  $('stHidden').querySelectorAll('.st-row .n').forEach((n, i) => n.textContent = rows[i].title);
+}
+async function unhide(key) {
+  if (syncing) return toast('Wait for the sync to finish');
+  const list = hiddenHere().filter(h => (h.group || h.id) === key);
+  const notHere = list.filter(h => !items.some(m => m.id === h.id));   // здесь о них нет записи — метку меняем сразу на Mac
+  if (notHere.length) {
+    const t = Date.now();
+    try {
+      await api('/api/meta', { items: Object.fromEntries(notHere.map(h => [h.id, { fields: { where: '' }, ts: { where: t } }])) });
+    } catch (e) { return toast('The Mac isn’t responding. Try again when it’s on.'); }
+  }
+  for (const h of list) {
+    const m = items.find(x => x.id === h.id);
+    if (m) await update(m, { where: '' });
+  }
+  const ids = new Set(list.map(h => h.id));
+  saveHiddenList(hiddenList().filter(h => !ids.has(h.id)));
+  toast('Back on this ' + devName());
+  await renderStorage();
+  if (notHere.length) sync();   // строки появятся с ☁
+}
+
 async function renderStorage() {
   items = await getAllMeta();
   $('stDevice').innerHTML = Object.entries(DEVICES).map(([id, name]) =>
     `<button data-dev="${id}" class="${device === id ? 'on' : ''}">${name}</button>`).join('');
+  $('stDeviceHint').textContent = deviceWrong() ? `This looks like an ${DEVICES[detectDevice()]}, but ${devName()} is selected.` : '';
+  renderHidden();
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => ({})) : {};
   const stored = items.filter(m => m.stored);
   const used = est.usage || sumSize(stored);
@@ -2133,6 +2209,8 @@ $('storageBtn').onclick = async () => { closeMenu(); await renderStorage(); $('s
 $('storageSheet').onclick = async e => {
   const dev = e.target.closest('[data-dev]');
   if (dev) { device = dev.dataset.dev; localStorage.setItem('device', device); await refresh(); return renderStorage(); }
+  const back = e.target.closest('[data-unhide]');
+  if (back) return unhide(back.dataset.unhide);
   const one = e.target.closest('[data-free]');
   if (one) {
     const m = items.find(x => x.id === one.dataset.free);
