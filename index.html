@@ -708,6 +708,7 @@ let objectURL = null;
 let pendingReopen = null;
 let dragging = false;
 let lastSave = 0;
+let manualSeekAt = 0;    // когда перематывали сами (кнопки, ползунок, экран блокировки)
 let sheetItem = null;    // дорожка, открытая в окне «Дорожка» / «Текст»
 const covers = new Map(); // id → адрес картинки
 const SPEEDS = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
@@ -1099,6 +1100,8 @@ $('playerMore').onclick = () => {
 
 // ---------- плеер ----------
 const audio = $('audio'), video = $('video');
+// Прямо говорим iOS, что это плеер музыки: в iOS 27 звук веб-приложения иначе глушится при блокировке экрана
+if (navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (e) {} }
 // волна: высоты столбиков зависят от трека, поэтому у каждого своя и всегда одинаковая;
 // столбики тонкие (3 px через 3 px), их число — по ширине волны
 function renderWave(m) {
@@ -1133,9 +1136,14 @@ function renderPlayerMeta() {
 async function play(m, file) {
   const blob = file || (m.stored ? await getMedia(m) : null);
   if (!blob) { toast('File not found — add it again'); return; }
-  stop(false);
+  const next = m.kind === 'video' ? video : audio;
+  stop(false, next);   // элемент, который будет играть, не сбрасываем: на заблокированном экране iOS не дала бы запустить его снова
   current = m;
-  el = m.kind === 'video' ? video : audio;
+  el = next;
+  // Звук зациклен: когда трек доходит до конца, iOS закрывает звук веб-приложения и при блокировке не даёт открыть
+  // снова. Поэтому «конца» нет — переход в начало ловим сами (trackEnded) и включаем следующий трек
+  el.loop = m.kind !== 'video';
+  el._lastT = 0;
   objectURL = URL.createObjectURL(blob);
   el.src = objectURL;
   el.playbackRate = el.defaultPlaybackRate = speed;
@@ -1152,9 +1160,9 @@ async function play(m, file) {
     if (!m.duration || Math.abs(m.duration - el.duration) > 1) { m.duration = el.duration; putMeta(m); }
     const pos = m.position || 0;
     if (resumable(m) && pos > 5 && pos < el.duration - 5 && !m.done) {
-      el.currentTime = pos;
+      manualSeekAt = Date.now(), el.currentTime = pos;
       // у видео место и так написано крупно — подсказка не нужна
-      if (m.kind !== 'video') toast('Resumed at ' + fmtTime(pos), 'Start over', () => { el.currentTime = 0; });
+      if (m.kind !== 'video') toast('Resumed at ' + fmtTime(pos), 'Start over', () => { manualSeekAt = Date.now(), el.currentTime = 0; });
     }
     if (m.kind !== 'video') m.done = false;
     updateUI();
@@ -1169,10 +1177,12 @@ async function play(m, file) {
 }
 
 let updateReady = null;   // новая версия плеера ждёт, пока закроют трек
-function stop(hide = true) {
+function stop(hide = true, keep = null) {
   savePosition(true);
-  for (const x of [audio, video]) { x.pause(); x.removeAttribute('src'); x.load(); }
-  if (objectURL) URL.revokeObjectURL(objectURL);
+  for (const x of [audio, video]) if (x !== keep) { x.pause(); x.removeAttribute('src'); x.load(); }
+  // старый файл ещё у элемента, который сейчас получит новый, — освобождаем чуть позже, иначе он успеет выдать ошибку
+  const old = objectURL;
+  if (old) { if (keep) setTimeout(() => URL.revokeObjectURL(old), 5000); else URL.revokeObjectURL(old); }
   objectURL = null; el = null;
   if (hide) {
     current = null;
@@ -1193,11 +1203,11 @@ function step(dir) {
   const i = queue.indexOf(current.id);
   const nextId = i >= 0 ? queue[i + dir] : null;
   const m = nextId && items.find(x => x.id === nextId);
-  if (m) play(m);
-  else if (dir < 0 && el) { el.currentTime = 0; updateUI(); }
+  if (m) return play(m);
+  if (dir < 0 && el) { manualSeekAt = Date.now(), el.currentTime = 0; updateUI(); }
 }
 // «предыдущий»: если трек играет дольше 3 секунд — сначала в его начало (как в обычных плеерах)
-const prevAction = () => current && (el && el.currentTime > 3 ? (el.currentTime = 0, updateUI()) : step(-1));
+const prevAction = () => current && (el && el.currentTime > 3 ? (manualSeekAt = Date.now(), el.currentTime = 0, updateUI()) : step(-1));
 const nextAction = () => current && step(1);
 
 function savePosition(force) {
@@ -1231,17 +1241,33 @@ function updateUI() {
   }
 }
 
+// трек доиграл: у зацикленного — переход в начало, у видео — обычный «ended»
+async function trackEnded(x) {
+  if (x !== el || !current) return;
+  const was = current;
+  if (resumable(was)) { was.position = 0; was.done = true; touch(was, 'position', 'done'); putMeta(was); refresh(); }
+  updateUI();
+  if (!resumable(was) || catOf(was) === 'audiobooks') await step(1);   // песня или глава — следующая
+  else if (was.group) await nextPart(was);                              // часть длинного видео — следующая
+  // дальше играть нечего — останавливаемся в начале, а не играем этот трек по кругу
+  if (current === was && el && el.loop) { el.pause(); manualSeekAt = Date.now(), el.currentTime = 0; updateUI(); }
+}
+// зацикленный трек сам перескочил с конца в начало (перемотку вручную сюда не считаем)
+const wrapped = x => x === el && x.loop && x.duration > 8 && x._lastT > x.duration - 4 && x.currentTime < 2
+  && Date.now() - manualSeekAt > 1500;
 for (const x of [audio, video]) {
-  x.addEventListener('timeupdate', () => { if (x === el) { updateUI(); savePosition(); } });
-  x.addEventListener('play', () => x === el && updateUI());
-  x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
-  x.addEventListener('ended', () => {
-    if (x !== el || !current) return;
-    if (!resumable(current)) { updateUI(); step(1); return; }   // песня доиграла — следующая
-    current.position = 0; current.done = true; touch(current, 'position', 'done'); putMeta(current); refresh(); updateUI();
-    if (catOf(current) === 'audiobooks') step(1);               // глава аудиокниги закончилась — следующая
-    else if (current.group) nextPart(current);                  // часть длинного видео — сразу следующая
+  x.addEventListener('timeupdate', () => {
+    if (x !== el) return;
+    if (wrapped(x)) { x._lastT = 0; trackEnded(x); return; }
+    x._lastT = x.currentTime;
+    updateUI(); savePosition();
   });
+  x.addEventListener('seeking', () => { if (wrapped(x)) { x._lastT = 0; trackEnded(x); } });
+  x.addEventListener('play', () => x === el && updateUI());
+  // кнопки экрана блокировки iOS слушает, только если их подключили, когда трек уже играет
+  x.addEventListener('playing', () => { if (x === el && current) setLockActions(); });
+  x.addEventListener('pause', () => { if (x === el) { updateUI(); savePosition(true); } });
+  x.addEventListener('ended', () => trackEnded(x));
   x.addEventListener('error', () => {
     if (x !== el) return;
     toast('iPhone can’t play this format. Download videos as mp4.', null, null, 6000);
@@ -1250,7 +1276,7 @@ for (const x of [audio, video]) {
 
 function skip(sec) {
   if (!el) return;
-  el.currentTime = Math.max(0, Math.min((el.duration || 0) - 0.5, el.currentTime + sec));
+  manualSeekAt = Date.now(), el.currentTime = Math.max(0, Math.min((el.duration || 0) - 0.5, el.currentTime + sec));
   updateUI();
 }
 
@@ -1305,6 +1331,11 @@ function setupMediaSession(m) {
   ms.metadata = meta();
   // если обложки нет — рисуем свою большую картинку (на экране блокировки она раскрывается на весь экран)
   if (!covers.get(m.id)) bigArt(m).then(() => { if (current === m) ms.metadata = meta(); });
+  setLockActions();
+}
+function setLockActions() {
+  if (!('mediaSession' in navigator)) return;
+  const ms = navigator.mediaSession;
   // «играть» и «пауза» не перехватываем: iOS сама включает и ставит на паузу звук. Если делать это из страницы,
   // iOS после паузы на заблокированном экране не даёт включить снова (страница в это время «спит»)
   const h = {
@@ -1314,7 +1345,7 @@ function setupMediaSession(m) {
     seekforward: d => skip(d.seekOffset || 10),
     previoustrack: prevAction,
     nexttrack: nextAction,
-    seekto: d => { if (el) { el.currentTime = d.seekTime; updateUI(); } },
+    seekto: d => { if (el) { manualSeekAt = Date.now(), el.currentTime = d.seekTime; updateUI(); } },
   };
   for (const [k, fn] of Object.entries(h)) { try { ms.setActionHandler(k, fn); } catch (e) {} }
 }
@@ -1362,7 +1393,7 @@ function renderVideoPanel() {
 }
 function watchFull(fromStart) {
   if (!current || !el) return;
-  if (fromStart) { el.currentTime = 0; current.done = false; }
+  if (fromStart) { manualSeekAt = Date.now(), el.currentTime = 0; current.done = false; }
   // на iPhone/iPad — системный полноэкранный плеер; вызываем сразу по нажатию, иначе iOS не разрешит
   if (video.webkitEnterFullscreen) { try { video.webkitEnterFullscreen(); } catch (e) {} }
   else if (video.requestFullscreen) video.requestFullscreen().catch(() => {});
@@ -1440,7 +1471,7 @@ $('seek').addEventListener('input', () => {
 });
 $('seek').addEventListener('change', () => {
   dragging = false;
-  if (el) { el.currentTime = $('seek').value / 1000 * (el.duration || 0); savePosition(true); updateUI(); }
+  if (el) { manualSeekAt = Date.now(), el.currentTime = $('seek').value / 1000 * (el.duration || 0); savePosition(true); updateUI(); }
 });
 
 function showSpeed() { $('speed').textContent = speed + '×'; }
