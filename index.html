@@ -1338,11 +1338,13 @@ function setLockActions() {
   const ms = navigator.mediaSession;
   // «играть» и «пауза» не перехватываем: iOS сама включает и ставит на паузу звук. Если делать это из страницы,
   // iOS после паузы на заблокированном экране не даёт включить снова (страница в это время «спит»)
+  const music = !!current && catOf(current) === 'music';
   const h = {
     play: null,
     pause: null,
-    seekbackward: d => skip(-(d.seekOffset || 10)),
-    seekforward: d => skip(d.seekOffset || 10),
+    // iOS показывает либо перемотку на 10 с, либо переключение треков: у музыки — треки, у остального — перемотка
+    seekbackward: music ? null : d => skip(-(d.seekOffset || 10)),
+    seekforward: music ? null : d => skip(d.seekOffset || 10),
     previoustrack: prevAction,
     nexttrack: nextAction,
     seekto: d => { if (el) { manualSeekAt = Date.now(), el.currentTime = d.seekTime; updateUI(); } },
